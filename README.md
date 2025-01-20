@@ -1,6 +1,6 @@
 <div align="center">
   
-  # Evil-M5Project v1.3.7 - Printer Attack
+  # Evil-M5Project v1.3.8 - Web Siphoning Cookie
 
   <img src="https://github.com/7h30th3r0n3/Evil-M5Core2/blob/main/SD-Card-File/img/startup.jpg" width="300" />
 
@@ -36,6 +36,25 @@
 </div>
 
 
+
+
+## NEW Feature! from v1.3.8: Web Siphoning Cookie!!!
+### Introducing the ability to scan, check status, and print on vulnerable printers.
+Inspired by the great work of Samy Karmar's : https://github.com/samyk/poisontap
+
+**Web Siphoning Cookie**:
+   - Provide a Web page that charge multiple hidden iframes with different domain.
+   - When the iframes is loaded, the domain is spoofed and answer a javascript that grab the cookie for this domain.
+   - The cookies is send to the webserver that save it on the sdcard.
+
+**Limitations**:
+   - Modern browser have limitations against this attack, Firefox use `network.cookie.cookieBehavior` in about:config to protect cookies if you put the value to 4, the attack is effective.
+   - Javascript may not be executed on all smartphone.
+
+**Workflow**:
+   - Start portal.
+   - Choose XX-WebSiphonCookie.html.
+   - When page is loaded the script execute the attack and cookie are logged on SDcard.
 
 ## NEW Feature! from v1.3.7: Printer Attack!!!
 ### Introducing the ability to scan, check status, and print on vulnerable printers.
