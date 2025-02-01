@@ -1,5 +1,5 @@
 /*
-   Evil-Cardputer - WiFi Network Testing and Exploration Tool
+   Evil-M5Core2 - WiFi Network Testing and Exploration Tool
 
    Copyright (c) 2024 7h30th3r0n3
 
@@ -22,8 +22,8 @@
    SOFTWARE.
 
    Disclaimer:
-   This tool, Evil-Cardputer, is developed for educational and ethical testing purposes only.
-   Any misuse or illegal use of this tool is strictly prohibited. The creator of Evil-Cardputer
+   This tool, Evil-M5Core2, is developed for educational and ethical testing purposes only.
+   Any misuse or illegal use of this tool is strictly prohibited. The creator of Evil-M5Core2
    assumes no liability and is not responsible for any misuse or damage caused by this tool.
    Users are required to comply with all applicable laws and regulations in their jurisdiction
    regarding network testing and ethical hacking.
@@ -174,6 +174,7 @@ const char* menuItems[] = {
     "Detect Printer",
     "File Print",
     "Check printer status",
+    "HoneyPot",
     "Settings",
 };
 
@@ -594,12 +595,10 @@ void setup() {
     "Never leave a trace always  behind you by CyberOzint",// Donation on Ko-fi // Thx CyberOzint !
     "Injecting hook.worm ransomware to your android",// Donation on Ko-fi // Thx hook.worm !
     "    You know Kiyomi ? ", // for collab on Wof
-    "Redirecting your bandwidth for Leska WiFi...", // Donation on Ko-fi // Thx Leska !
     "Compressing wook.worm algorithm", // Donation on Ko-fi // Thx wook.worm !
     "Summoning the void by kdv88", // Donation on Ko-fi // Thx kdv88 !
     "Egg sandwich - robt2d2",// Donation on Ko-fi // Thx robt2d2 !
     " Scared of the .bat? KNAX", // Donation on Ko-fi // Thx KNAX !
-    "    You know Kiyomi ?   ", // for collab on Wof
     "           42           ",
     "    Don't be a Skidz !",
     "  Hack,Eat,Sleep,Repeat",
@@ -666,7 +665,7 @@ void setup() {
     "Butters Awkward Escapades",
     "Navigating the Multiverse",
     "Affirmative Dave, I read you.",
-    "Your Evil-Cardputer have died of dysentery",
+    "Your Evil-M5Core2 have died of dysentery",
     "Did you disable PSRAM ?",
     "You already star project?",
     "Rick's Portal Gun Activated...",
@@ -949,7 +948,7 @@ void setup() {
   // Textes à afficher
   const char* text1 = "Evil-Cardputer";
   const char* text2 = "By 7h30th3r0n3";
-  const char* text3 = "v1.3.8 2024";
+  const char* text3 = "v1.3.9 2024";
 
   // Mesure de la largeur du texte et calcul de la position du curseur
   int text1Width = M5.Lcd.textWidth(text1);
@@ -979,7 +978,7 @@ void setup() {
   Serial.println("-------------------");
   Serial.println("Evil-Cardputer");
   Serial.println("By 7h30th3r0n3");
-  Serial.println("v1.3.8 2024");
+  Serial.println("v1.3.9 2024");
   Serial.println("-------------------");
   // Diviser randomMessage en deux lignes pour s'adapter à l'écran
   int maxCharsPerLine = screenWidth / 10;  // Estimation de 10 pixels par caractère
@@ -1038,7 +1037,7 @@ void setup() {
   }
 
     if (ssid != "") {
-      //WiFi.mode(WIFI_MODE_AP);
+      WiFi.mode(WIFI_MODE_STA);
       WiFi.begin(ssid.c_str(), password.c_str());
   
       unsigned long startAttemptTime = millis();
@@ -1058,7 +1057,7 @@ void setup() {
         delay(1000);
       } else {
         Serial.println("Fail to connect to Wifi or timeout...");
-        WiFi.mode(WIFI_MODE_STA);
+        WiFi.disconnect();
       }
   } else {
     Serial.println("SSID is empty.");
@@ -1134,7 +1133,6 @@ int getConnectedPeopleCount() {
 int getCapturedPasswordsCount() {
   File file = SD.open("/credentials.txt");
   if (!file) {
-    Serial.println("Error opening credentials file for reading");
     return 0;
   }
 
@@ -1487,6 +1485,9 @@ void executeMenuItem(int index) {
         checkPrinterStatus();
         break;
     case 52:
+        startHoneypot();
+        break;
+    case 53:
         showSettingsMenu();
         break;
   }
@@ -1546,7 +1547,7 @@ void handleMenuInput() {
     keyHandled = true;
   } else if (M5Cardputer.Keyboard.isKeyPressed('/')) {
     if (millis() - lastKeyPressTime > keyRepeatDelay) {
-      currentIndex += 9;
+      currentIndex += 3;
       if (currentIndex >= menuSize) {
         currentIndex %= menuSize;  // Boucle au début du menu
       }
@@ -1556,7 +1557,7 @@ void handleMenuInput() {
     keyHandled = true;
   } else if (M5Cardputer.Keyboard.isKeyPressed(',')) {
     if (millis() - lastKeyPressTime > keyRepeatDelay) {
-      currentIndex -= 9;
+      currentIndex -= 3;
       if (currentIndex < 0) {
         currentIndex = (menuSize + currentIndex) % menuSize;  // Boucle à la fin du menu
       }
@@ -1719,7 +1720,6 @@ void handleDnsRequestSerial() {
   server.handleClient();
   checkSerialCommands();
 }
-
 
 void listProbesSerial() {
   File file = SD.open("/probes.txt", FILE_READ);
@@ -2335,8 +2335,13 @@ void handleLogRequest() {
 
 
 void createCaptivePortal() {
-  String ssid = clonedSSID.isEmpty() ? "Evil-Cardputer" : clonedSSID;
-  WiFi.mode(WIFI_MODE_APSTA);
+  String ssid = clonedSSID.isEmpty() ? "Evil-M5Core2" : clonedSSID;
+     // Vérification de la connexion Wi-Fi et mise à jour des variables
+  if (WiFi.localIP().toString() == "0.0.0.0") {
+        WiFi.mode(WIFI_MODE_AP);
+  } else {
+        WiFi.mode(WIFI_MODE_APSTA);
+  }
   if (!isAutoKarmaActive) {
     if (captivePortalPassword == "") {
       WiFi.softAP(clonedSSID.c_str());
@@ -2371,14 +2376,14 @@ void createCaptivePortal() {
 
 
 
-  server.on("/Evil-Cardputer-menu", HTTP_GET, []() {
+  server.on("/evil-m5core2-menu", HTTP_GET, []() {
       String html = "<!DOCTYPE html><html><head><style>";
       html += "body{font-family:sans-serif;background:#f0f0f0;padding:40px;display:flex;justify-content:center;align-items:center;height:100vh}";
       html += "form{text-align:center;}div.menu{background:white;padding:20px;box-shadow:0 4px 8px rgba(0,0,0,0.1);border-radius:10px}";
       html += "input,a{margin:10px;padding:8px;width:80%;box-sizing:border-box;border:1px solid #ddd;border-radius:5px}";
       html += "a{display:inline-block;text-decoration:none;color:white;background:#007bff;text-align:center}";
       html += "</style></head><body>";
-      html += "<div class='menu'><form action='/Evil-Cardputer-menu' method='get'>";
+      html += "<div class='menu'><form action='/evil-m5core2-menu' method='get'>";
       html += "Password: <input type='password' name='pass'><br>";
       html += "<a href='javascript:void(0);' onclick='this.href=\"/credentials?pass=\"+document.getElementsByName(\"pass\")[0].value'>Credentials</a>";
       html += "<a href='javascript:void(0);' onclick='this.href=\"/uploadhtmlfile?pass=\"+document.getElementsByName(\"pass\")[0].value'>Upload File On SD</a>";
@@ -2391,7 +2396,7 @@ void createCaptivePortal() {
       
       server.send(200, "text/html", html);
       Serial.println("-------------------");
-      Serial.println("Evil-Cardputer-menu access.");
+      Serial.println("evil-m5core2-menu access.");
       Serial.println("-------------------");
   });
 
@@ -2631,7 +2636,7 @@ void createCaptivePortal() {
       html += "</style></head><body>";
       
       // Ajout du bouton de retour au menu principal
-      html += "<p><a href='/Evil-Cardputer-menu'><button>Menu</button></a></p>";
+      html += "<p><a href='/evil-m5core2-menu'><button>Menu</button></a></p>";
       
       html += "<ul>";
       
@@ -2945,7 +2950,7 @@ void handleSdCardBrowse() {
     }
 
     // Ajout du bouton pour revenir au menu principal
-    String html = "<p><a href='/Evil-Cardputer-menu'><button style='background-color: #007bff; border: none; color: white; padding: 6px 15px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; margin: 4px 2px; cursor: pointer;'>Menu</button></a></p>";
+    String html = "<p><a href='/evil-m5core2-menu'><button style='background-color: #007bff; border: none; color: white; padding: 6px 15px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; margin: 4px 2px; cursor: pointer;'>Menu</button></a></p>";
     
     // Générer le HTML pour lister les fichiers et dossiers
     html += getDirectoryHtml(dir, dirPath, password);
@@ -6226,9 +6231,9 @@ void displayAPStatus(const char* ssid, unsigned long startTime, int autoKarmaAPD
 
 String createPreHeader() {
   String preHeader = "WigleWifi-1.4";
-  preHeader += ",appRelease=v1.3.8"; // Remplacez [version] par la version de votre application
+  preHeader += ",appRelease=v1.3.9"; // Remplacez [version] par la version de votre application
   preHeader += ",model=Cardputer";
-  preHeader += ",release=v1.3.8"; // Remplacez [release] par la version de l'OS de l'appareil
+  preHeader += ",release=v1.3.9"; // Remplacez [release] par la version de l'OS de l'appareil
   preHeader += ",device=Evil-Cardputer"; // Remplacez [device name] par un nom de périphérique, si souhaité
   preHeader += ",display=7h30th3r0n3"; // Ajoutez les caractéristiques d'affichage, si pertinent
   preHeader += ",board=M5Cardputer";
@@ -7444,7 +7449,7 @@ void enregistrerDansFichierPCAP(const wifi_promiscuous_pkt_t* packet, bool beaco
 
 
 // deauther start
-// Big thanks to Aro2142 (https://github.com/7h30th3r0n3/Evil-Cardputer/issues/16)
+// Big thanks to Aro2142 (https://github.com/7h30th3r0n3/Evil-M5Core2/issues/16)
 // Even Bigger thanks to spacehuhn https://github.com/spacehuhn / https://spacehuhn.com/
 // Big thanks to the Nemo project for the easy bypass: https://github.com/n0xa/m5stick-nemo
 // Reference to understand : https://github.com/risinek/esp32-wifi-penetration-tool/tree/master/components/wsl_bypasser
@@ -8629,6 +8634,17 @@ void connectWifi(int networkIndex) {
       waitAndReturnToMenu("Failed to connect to WiFi: " + nameSSID);
     }
     return;
+  }
+  
+  // Vérifier si le SSID est déjà enregistré
+  if (ssid == nameSSID) {
+    Serial.println("Previously connected to this network. Trying saved password...");
+    if (connectToWiFi(nameSSID, password)) {
+      waitAndReturnToMenu("Connected to WiFi: " + nameSSID);
+      return;
+    } else {
+      Serial.println("Failed to connect with saved password, asking for a new one...");
+    }
   }
 
   // Demander le mot de passe pour les réseaux sécurisés
@@ -10662,7 +10678,7 @@ int totalNetworks = 0;
 unsigned long lastLog = 0;
 int currentScreen = 1;  // Track which screen is currently displayed
 
-const String wigleHeaderFileFormat = "WigleWifi-1.4,appRelease=v1.3.8,model=Cardputer,release=v1.3.8,device=Evil-Cardputer,display=7h30th3r0n3,board=M5Cardputer,brand=M5Stack";
+const String wigleHeaderFileFormat = "WigleWifi-1.4,appRelease=v1.3.9,model=Cardputer,release=v1.3.9,device=Evil-Cardputer,display=7h30th3r0n3,board=M5Cardputer,brand=M5Stack";
 
 char* log_col_names[LOG_COLUMN_COUNT] = {
     "MAC", "SSID", "AuthMode", "FirstSeen", "Channel", "RSSI", "CurrentLatitude", "CurrentLongitude", "AltitudeMeters", "AccuracyMeters", "Type"
@@ -14349,8 +14365,8 @@ void checkPrinterStatus() {
     bool needsDisplayUpdate = true;
 
     if (WiFi.localIP().toString() == "0.0.0.0") {
-        Serial.println("[INFO] Not connected to a network.");
-        return;
+      waitAndReturnToMenu("Not connected...");
+      return;
     }
 
     // On prépare notre vecteur de lignes à afficher
@@ -14492,4 +14508,630 @@ void checkPrinterStatus() {
     }
 
     waitAndReturnToMenu("return to menu");
+}
+
+
+
+
+// -- Global configuration --
+int honeypotPort = 23; 
+String honeypotLogFile = "/honeypot_logs.txt"; 
+WiFiServer honeypotServer(honeypotPort);
+
+// -- Start the Telnet honeypot --
+void startHoneypot() {
+    honeypotServer.begin();
+    Serial.println("Fake Telnet service started on port " + String(honeypotPort));
+    M5.Display.clear(); // Effacer l'écran
+    M5.Display.setTextSize(1.5);
+    M5.Display.setCursor(0, 0);
+    M5.Display.setTextColor(menuTextUnFocusedColor);
+    M5.Display.println("Honeypot Started !");
+    M5.Display.println("Waiting interaction...");
+    while (true) {
+        M5Cardputer.update();
+        honeypotLoop();   
+        if (M5Cardputer.Keyboard.isKeyPressed(KEY_BACKSPACE)) { 
+            break;
+        }
+        delay(10);
+    }
+    honeypotServer.stop();
+    Serial.println("Honeypot stopped.");
+    waitAndReturnToMenu("Honeypot stopped.");
+}
+
+// -- Main loop to check for incoming clients --
+void honeypotLoop() {
+    WiFiClient client = honeypotServer.available();
+    if (client) {
+        handleHoneypotClient(client);
+    }
+}
+
+// -- Log commands and credentials to a file on SD --
+#define MAX_LOG_LINES 4 // Nombre maximum de lignes affichées à l'écran
+String logBuffer[MAX_LOG_LINES]; // Buffer circulaire pour les logs
+int currentLogIndex = 0; // Index du prochain emplacement dans le buffer
+
+// -- Log commands and credentials to a file on SD and display on screen with scrolling --
+void logHoneypotCommand(String clientIP, String command) {
+    File logFile = SD.open(honeypotLogFile, FILE_APPEND);
+    if (!logFile) {
+        Serial.println("Error: Unable to open log file.");
+        return;
+    }
+
+    // Créer une entrée log avec timestamp
+    String logEntry = "[" + String(millis()) + "] ";
+    logEntry += "IP: " + clientIP + " - Command: " + command;
+    logFile.println(logEntry);
+    logFile.close();
+
+    // Afficher dans le terminal série
+    Serial.println("------------------");
+    Serial.println("IP: " + clientIP);
+    Serial.println("Command: " + command);
+    Serial.println("------------------");
+
+    // Ajouter au buffer circulaire pour affichage
+    String formattedLog = "IP: " + clientIP + "\n" + command + "\n------------------";
+    logBuffer[currentLogIndex] = formattedLog;
+    currentLogIndex = (currentLogIndex + 1) % MAX_LOG_LINES; // Gestion du buffer circulaire
+
+    // Redessiner l'écran avec les logs
+    redrawScreenWithLogs();
+}
+
+// -- Helper function to redraw the screen with all logs in the buffer --
+void redrawScreenWithLogs() {
+    M5.Display.clear(); // Effacer l'écran
+    M5.Display.setTextSize(1.5);
+    M5.Display.setCursor(0, 0);
+    M5.Display.setTextColor(menuTextUnFocusedColor);
+    
+    // Afficher les logs du buffer dans l'ordre
+    int startIndex = currentLogIndex; // Commencer par la position actuelle dans le buffer
+    for (int i = 0; i < MAX_LOG_LINES; i++) {
+        int index = (startIndex + i) % MAX_LOG_LINES;
+        if (logBuffer[index] != "") { // Ignorer les lignes vides (au démarrage)
+            M5.Display.println(logBuffer[index]);
+        }
+    }
+}
+
+
+// -- Handle interaction with a single Telnet client --
+void handleHoneypotClient(WiFiClient client) {
+    // Prompt pour le login
+    client.print("\r\nlogin: ");
+    String username = readLine(client, false);  // pas d'écho
+    logHoneypotCommand(client.remoteIP().toString(), "LOGIN username: " + username);
+  
+    // Prompt pour le password
+    client.print("Password: ");
+    String password = readLine(client, false);
+    logHoneypotCommand(client.remoteIP().toString(), "LOGIN password: " + password);
+  
+    // Simulation d’un login réussi (peu importe les identifiants)
+    client.println("\r\nWelcome to Ubuntu 20.04.5 LTS (GNU/Linux 5.4.0-109-generic x86_64)");
+    client.println(" * Documentation:  https://help.ubuntu.com");
+    client.println(" * Management:     https://landscape.canonical.com");
+    client.println(" * Support:        https://ubuntu.com/advantage\r\n");
+  
+    // Émulation d’un shell
+    String currentDirectory = "/home/pi";
+    String prompt = "pi@ubuntu:~$ ";
+  
+    while (client.connected()) {
+      client.print(prompt);
+      String command = readLine(client, false); // on ne renvoie jamais les caractères
+      command.trim();
+  
+      // Log de la commande
+      logHoneypotCommand(client.remoteIP().toString(), command);
+  
+      //------------------------------------------------
+      // 1. Commandes de sortie
+      //------------------------------------------------
+      if (command.equalsIgnoreCase("exit") || command.equalsIgnoreCase("logout")) {
+        client.println("Goodbye.");
+        break;
+      }
+  
+      //------------------------------------------------
+      // 2. Commandes classiques
+      //------------------------------------------------
+      else if (command.equals("pwd")) {
+        client.println(currentDirectory);
+      }
+      else if (command.equals("whoami")) {
+        client.println("pi");
+      }
+      else if (command.equals("uname -a")) {
+        client.println("Linux ubuntu 5.4.0-109-generic #123-Ubuntu SMP x86_64 GNU/Linux");
+      }
+      else if (command.equals("hostname")) {
+        client.println("ubuntu");
+      }
+      else if (command.equals("uptime")) {
+        client.println(" 12:15:01 up 1:15,  2 users,  load average: 0.00, 0.03, 0.00");
+      }
+      else if (command.equals("free -h")) {
+        client.println("              total        used        free      shared  buff/cache   available");
+        client.println("Mem:          1000M        200M        600M         10M        200M        700M");
+        client.println("Swap:         1024M          0B       1024M");
+      }
+      else if (command.equals("df -h")) {
+        client.println("Filesystem      Size  Used Avail Use% Mounted on");
+        client.println("/dev/sda1        50G   15G   33G  31% /");
+        client.println("tmpfs           100M  1.2M   99M   2% /run");
+        client.println("tmpfs           500M     0  500M   0% /dev/shm");
+      }
+      else if (command.equals("ps aux")) {
+        client.println("USER       PID  %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND");
+        client.println("root         1   0.0  0.1  22564  1124 ?        Ss   12:00   0:01 /sbin/init");
+        client.println("root       539   0.0  0.3  46896  3452 ?        Ss   12:00   0:00 /lib/systemd/systemd-journald");
+        client.println("pi        1303   0.0  0.2  10820  2220 pts/0    Ss+  12:05   0:00 bash");
+        client.println("pi        1304   0.0  0.2  10820  2152 pts/1    Ss+  12:06   0:00 bash");
+      }
+      else if (command.equals("top")) {
+        client.println("top - 12:10:11 up  1:10,  2 users,  load average: 0.01, 0.05, 0.00");
+        client.println("Tasks:  93 total,   1 running,  92 sleeping,   0 stopped,   0 zombie");
+        client.println("%Cpu(s):  0.0 us,  0.2 sy,  0.0 ni, 99.7 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st");
+        client.println("MiB Mem :   1000.0 total,    600.0 free,    200.0 used,    200.0 buff/cache");
+        client.println("MiB Swap:   1024.0 total,   1024.0 free,      0.0 used.    700.0 avail Mem");
+        client.println("");
+        client.println("  PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND");
+        client.println(" 1303 pi        20   0   10820   2220   2168 S   0.0  0.2   0:00.03 bash");
+        client.println(" 1304 pi        20   0   10820   2152   2096 S   0.0  0.2   0:00.01 bash");
+      }
+  
+      //------------------------------------------------
+      // 3. Navigation et gestion de fichiers
+      //------------------------------------------------
+      else if (command.startsWith("ls")) {
+        // On affiche des fichiers différents selon currentDirectory
+        bool longListing = (command.indexOf("-l") >= 0);
+  
+        // /home/pi
+        if (currentDirectory.equals("/home/pi")) {
+          if (longListing) {
+            client.println("total 20");
+            client.println("drwxr-xr-x  2 pi  pi  4096 Jan  1 12:00 Documents");
+            client.println("drwxr-xr-x  2 pi  pi  4096 Jan  1 12:00 Downloads");
+            client.println("-rw-r--r--  1 pi  pi   220 Jan  1 12:00 .bashrc");
+            client.println("-rw-r--r--  1 pi  pi  3523 Jan  1 12:00 .profile");
+            client.println("-rw-r--r--  1 pi  pi    50 Jan  1 12:00 secrets.txt");
+          } else {
+            client.println("Documents  Downloads  .bashrc  .profile  secrets.txt");
+          }
+        }
+        // /home/pi/Documents
+        else if (currentDirectory.equals("/home/pi/Documents")) {
+          if (longListing) {
+            client.println("total 16");
+            client.println("-rw-r--r--  1 pi  pi   80 Jan  1 12:00 mysql_credentials.txt");
+            client.println("-rw-r--r--  1 pi  pi  120 Jan  1 12:00 password_list.txt");
+            client.println("-rw-r--r--  1 pi  pi  600 Jan  1 12:00 financial_report_2023.xlsx");
+            client.println("-rw-r--r--  1 pi  pi   20 Jan  1 12:00 readme.md");
+          } else {
+            client.println("mysql_credentials.txt  password_list.txt  financial_report_2023.xlsx  readme.md");
+          }
+        }
+        // /home/pi/Downloads
+        else if (currentDirectory.equals("/home/pi/Downloads")) {
+          if (longListing) {
+            client.println("total 8");
+            client.println("-rw-r--r--  1 pi  pi  102 Jan  1 12:00 malware.sh");
+            client.println("-rw-r--r--  1 pi  pi  250 Jan  1 12:00 helpful_script.py");
+          } else {
+            client.println("malware.sh  helpful_script.py");
+          }
+        }
+        else if (currentDirectory.equals("/home")) {
+          if (longListing) {
+            client.println("total 8");
+            client.println("drw-r--r--  1 pi  pi  102 Jan  1 12:00 pi");
+          } else {
+            client.println("pi");
+          }
+        }
+        else if (currentDirectory.equals("/")) {
+          if (longListing) {
+            client.println("total 8");
+            client.println("drw-r--r--  1 pi  pi  102 Jan  1 12:00 home");
+          } else {
+            client.println("home");
+          }
+        }
+        // Autres répertoires
+        else {
+          // Par défaut, on met un ls vide ou un message
+          client.println("No files found.");
+        }
+      }
+      else if (command.startsWith("cd ")) {
+        String newDir = command.substring(3);
+        newDir.trim();
+  
+        // Simulation du changement de répertoire
+        if (newDir.equals("..")) {
+          // Retour en arrière dans l'arborescence
+          if (currentDirectory.equals("/home/pi")) {
+            currentDirectory = "/home";
+            prompt = "pi@ubuntu:/home$ ";
+          }
+          else if (currentDirectory.equals("/home")) {
+            currentDirectory = "/";
+            prompt = "pi@ubuntu:/$ ";
+          }
+          else if (currentDirectory.equals("/")) {
+            client.println("bash: cd: ..: No such file or directory");
+          }
+          else {
+            client.println("bash: cd: ..: No such file or directory");
+          }
+        }
+        else if (newDir.equals("/") || newDir.equals("~")) {
+          // Aller à la racine ou au répertoire utilisateur
+          currentDirectory = (newDir.equals("~")) ? "/home/pi" : "/";
+          prompt = (newDir.equals("~")) ? "pi@ubuntu:~$ " : "pi@ubuntu:/$ ";
+        }
+        else if (newDir.equals("home") && currentDirectory.equals("/")) {
+          // Aller explicitement à /home depuis /
+          currentDirectory = "/home";
+          prompt = "pi@ubuntu:/home$ ";
+        }
+        else if (newDir.equals("pi") && currentDirectory.equals("/home")) {
+          // Aller explicitement à /home/pi depuis /home
+          currentDirectory = "/home/pi";
+          prompt = "pi@ubuntu:~$ ";
+        }
+        else if (newDir.equals("Documents") && currentDirectory.equals("/home/pi")) {
+          // Aller à Documents uniquement si on est dans /home/pi
+          currentDirectory = "/home/pi/Documents";
+          prompt = "pi@ubuntu:~/Documents$ ";
+        }
+        else if (newDir.equals("Downloads") && currentDirectory.equals("/home/pi")) {
+          // Aller à Downloads uniquement si on est dans /home/pi
+          currentDirectory = "/home/pi/Downloads";
+          prompt = "pi@ubuntu:~/Downloads$ ";
+        }
+        else {
+          // Gestion des chemins absolus ou chemins non valides
+          if (newDir.startsWith("/home/pi/")) {
+            if (newDir.equals("/home/pi/Documents")) {
+              currentDirectory = "/home/pi/Documents";
+              prompt = "pi@ubuntu:~/Documents$ ";
+            } else if (newDir.equals("/home/pi/Downloads")) {
+              currentDirectory = "/home/pi/Downloads";
+              prompt = "pi@ubuntu:~/Downloads$ ";
+            } else {
+              client.println("bash: cd: " + newDir + ": No such file or directory");
+            }
+          } else if (newDir.startsWith("/home/")) {
+            currentDirectory = "/home";
+            prompt = "pi@ubuntu:/home$ ";
+          } else {
+            client.println("bash: cd: " + newDir + ": No such file or directory");
+          }
+        }
+      }
+      else if (command.startsWith("mkdir ")) {
+        String dirName = command.substring(6);
+        dirName.trim();
+        client.println("Directory '" + dirName + "' created.");
+      }
+      else if (command.startsWith("rmdir ")) {
+        String dirName = command.substring(6);
+        dirName.trim();
+        client.println("Directory '" + dirName + "' removed.");
+      }
+      else if (command.startsWith("rm ")) {
+        client.println("File removed successfully.");
+      }
+      else if (command.startsWith("mv ") || command.startsWith("cp ")) {
+        client.println("Operation completed successfully.");
+      }
+      else if (command.startsWith("chmod ")) {
+        client.println("Permissions changed.");
+      }
+      else if (command.startsWith("chown ")) {
+        client.println("Ownership changed.");
+      }
+      else if (command.startsWith("touch ")) {
+        String fileName = command.substring(6);
+        fileName.trim();
+        client.println("File '" + fileName + "' created or timestamp updated.");
+      }
+  
+      //------------------------------------------------
+      // 4. Lecture de fichiers (cat)
+      //------------------------------------------------
+      else if (command.startsWith("cat ")) {
+        String fileName = command.substring(4);
+        fileName.trim();
+  
+        // Gestion de cas particuliers absolus
+        if (fileName == "/etc/passwd") {
+          client.println("root:x:0:0:root:/root:/bin/bash");
+          client.println("daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin");
+          client.println("bin:x:2:2:bin:/bin:/usr/sbin/nologin");
+          client.println("sys:x:3:3:sys:/dev:/usr/sbin/nologin");
+          client.println("pi:x:1000:1000:,,,:/home/pi:/bin/bash");
+        }
+        else if (fileName == "/etc/shadow") {
+          client.println("root:*:18948:0:99999:7:::");
+          client.println("daemon:*:18948:0:99999:7:::");
+          client.println("bin:*:18948:0:99999:7:::");
+          client.println("sys:*:18948:0:99999:7:::");
+          client.println("pi:$6$randomsalt$somehashedpassword:18948:0:99999:7:::");
+        }
+        else {
+          // On gère les chemins relatifs ou absolus (simples) en tenant compte du currentDirectory
+          // Pour simplifier, on traite les fichiers "connus" en fonction du répertoire courant
+  
+          // Normaliser si besoin (ex: cat /home/pi/Documents/...).
+          // On peut faire un check direct, ou reconstituer le "fullPath".
+          String fullPath = fileName;
+          if (!fileName.startsWith("/")) {
+            // c'est un chemin relatif => on le rattache au currentDirectory
+            fullPath = currentDirectory + "/" + fileName;
+          }
+  
+          // /home/pi/secrets.txt
+          if (fullPath == "/home/pi/secrets.txt") {
+            client.println("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7NGGYUNGGYD");
+            client.println("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYNGGYUNGGYD");
+          }
+          // /home/pi/Documents/mysql_credentials.txt
+          else if (fullPath == "/home/pi/Documents/mysql_credentials.txt") {
+            client.println("host=localhost");
+            client.println("user=admin");
+            client.println("password=My5up3rP@ss");
+            client.println("database=production_db");
+          }
+          // /home/pi/Documents/password_list.txt
+          else if (fullPath == "/home/pi/Documents/password_list.txt") {
+            client.println("facebook:  fbpass123");
+            client.println("gmail:     gmPass!0");
+            client.println("twitter:   tw_pass_2025");
+          }
+          // /home/pi/Documents/financial_report_2023.xlsx (fichier binaire, on simule)
+          else if (fullPath == "/home/pi/Documents/financial_report_2023.xlsx") {
+            client.println("This appears to be a binary file (Excel).");
+            client.println("�PK\003\004... (truncated) ...");
+          }
+          // /home/pi/Documents/readme.md
+          else if (fullPath == "/home/pi/Documents/readme.md") {
+            client.println("# README");
+            client.println("This is a sample markdown file. Nothing special here.");
+          }
+          // /home/pi/Downloads/malware.sh
+          else if (fullPath == "/home/pi/Downloads/malware.sh") {
+            client.println("#!/bin/bash");
+            client.println("echo 'Running malware...'");
+            client.println("rm -rf / --no-preserve-root");
+          }
+          // /home/pi/Downloads/helpful_script.py
+          else if (fullPath == "/home/pi/Downloads/helpful_script.py") {
+            client.println("#!/usr/bin/env python3");
+            client.println("print('Just a helpful script.')");
+          }
+          // Sinon, fichier inconnu
+          else {
+            client.println("cat: " + fileName + ": No such file or directory");
+          }
+        }
+      }
+  
+      //------------------------------------------------
+      // 5. Commandes réseau souvent utilisées
+      //------------------------------------------------
+      else if (command.equals("ifconfig")) {
+        client.println("eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500");
+        client.println("        inet 192.168.1.10  netmask 255.255.255.0  broadcast 192.168.1.255");
+        client.println("        inet6 fe80::d6be:d9ff:fe1b:220c  prefixlen 64  scopeid 0x20<link>");
+        client.println("        RX packets 1243  bytes 234567 (234.5 KB)");
+        client.println("        TX packets 981   bytes 123456 (123.4 KB)");
+      }
+      else if (command.equals("ip addr")) {
+        client.println("1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000");
+        client.println("    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00");
+        client.println("    inet 127.0.0.1/8 scope host lo");
+        client.println("    inet6 ::1/128 scope host ");
+        client.println("2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000");
+        client.println("    link/ether aa:bb:cc:dd:ee:ff brd ff:ff:ff:ff:ff:ff");
+        client.println("    inet 192.168.1.10/24 brd 192.168.1.255 scope global eth0");
+      }
+      else if (command.startsWith("ping ")) {
+        String target = command.substring(5);
+        client.println("PING " + target + " (1.2.3.4) 56(84) bytes of data.");
+        client.println("64 bytes from 1.2.3.4: icmp_seq=1 ttl=64 time=0.042 ms");
+        client.println("64 bytes from 1.2.3.4: icmp_seq=2 ttl=64 time=0.043 ms");
+        client.println("--- " + target + " ping statistics ---");
+        client.println("2 packets transmitted, 2 received, 0% packet loss, time 1ms");
+      }
+      else if (command.equals("netstat -an")) {
+        client.println("Active Internet connections (servers and established)");
+        client.println("Proto Recv-Q Send-Q Local Address           Foreign Address         State");
+        client.println("tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN");
+        client.println("tcp        0      0 127.0.0.1:3306          0.0.0.0:*               LISTEN");
+        client.println("tcp        0      0 192.168.1.10:23         192.168.1.100:54321     ESTABLISHED");
+      }
+      else if (command.startsWith("wget ") || command.startsWith("curl ")) {
+        String url = command.substring(command.indexOf(" ") + 1);
+        client.println("Connecting to " + url + "...");
+        client.println("HTTP request sent, awaiting response... 200 OK");
+        client.println("Length: 1024 (1.0K) [text/html]");
+        client.println("Saving to: ‘index.html’");
+        client.println("index.html         100%[==========>]  1.00K  --.-KB/s    in 0s");
+        client.println("Download completed.");
+      }
+  
+      //------------------------------------------------
+      // 6. Commandes de services et de packages
+      //------------------------------------------------
+      else if (command.startsWith("apt-get ")) {
+        if (command.indexOf("update") >= 0) {
+          client.println("Get:1 http://archive.ubuntu.com/ubuntu focal InRelease [265 kB]");
+          client.println("Get:2 http://archive.ubuntu.com/ubuntu focal-updates InRelease [114 kB]");
+          client.println("Reading package lists... Done");
+        }
+        else if (command.indexOf("install") >= 0) {
+          client.println("Reading package lists... Done");
+          client.println("Building dependency tree");
+          client.println("Reading state information... Done");
+          client.println("The following NEW packages will be installed:");
+          client.println("  <some-package>");
+          client.println("0 upgraded, 1 newly installed, 0 to remove and 5 not upgraded.");
+          client.println("Need to get 0 B/123 kB of archives.");
+          client.println("After this operation, 345 kB of additional disk space will be used.");
+          client.println("Selecting previously unselected package <some-package>.");
+          client.println("(Reading database ... 45% )");
+          client.println("Unpacking <some-package> (from <some-package>.deb) ...");
+          client.println("Setting up <some-package> ...");
+          client.println("Processing triggers for man-db (2.9.1-1) ...");
+        }
+        else {
+          client.println("E: Invalid operation " + command.substring(7));
+        }
+      }
+      else if (command.startsWith("service ")) {
+        // service <nom> start/stop/status/restart
+        if (command.indexOf("start") >= 0) {
+          client.println("Starting service " + command.substring(8) + "...");
+          client.println("Service started.");
+        }
+        else if (command.indexOf("stop") >= 0) {
+          client.println("Stopping service " + command.substring(8) + "...");
+          client.println("Service stopped.");
+        }
+        else if (command.indexOf("restart") >= 0) {
+          client.println("Restarting service " + command.substring(8) + "...");
+          client.println("Service restarted.");
+        }
+        else if (command.indexOf("status") >= 0) {
+          client.println(command.substring(8) + " is running.");
+        }
+        else {
+          client.println("Usage: service <service> {start|stop|restart|status}");
+        }
+      }
+      else if (command.startsWith("systemctl ")) {
+        // ex: systemctl status ssh
+        if (command.indexOf("start") >= 0) {
+          client.println("Systemd: Starting service...");
+          client.println("Done.");
+        }
+        else if (command.indexOf("stop") >= 0) {
+          client.println("Systemd: Stopping service...");
+          client.println("Done.");
+        }
+        else if (command.indexOf("restart") >= 0) {
+          client.println("Systemd: Restarting service...");
+          client.println("Done.");
+        }
+        else if (command.indexOf("status") >= 0) {
+          client.println("● ssh.service - OpenBSD Secure Shell server");
+          client.println("   Loaded: loaded (/lib/systemd/system/ssh.service; enabled; vendor preset: enabled)");
+          client.println("   Active: active (running) since Wed 2025-01-23 12:00:00 UTC; 1h 4min ago");
+          client.println(" Main PID: 600 (sshd)");
+          client.println("    Tasks: 1 (limit: 4915)");
+          client.println("   CGroup: /system.slice/ssh.service");
+        }
+        else {
+          client.println("systemctl: command not recognized or incomplete arguments.");
+        }
+      }
+  
+      //------------------------------------------------
+      // 7. Commandes d’élévation de privilèges
+      //------------------------------------------------
+      else if (command.startsWith("sudo ")) {
+        client.println("[sudo] password for pi: ");
+        delay(1000);
+        client.println("pi is not in the sudoers file.  This incident will be reported.");
+      }
+  
+      //------------------------------------------------
+      // 8. Commandes diverses
+      //------------------------------------------------
+      else if (command.equals("env")) {
+        client.println("SHELL=/bin/bash");
+        client.println("PWD=" + currentDirectory);
+        client.println("LOGNAME=pi");
+        client.println("HOME=/home/pi");
+        client.println("LANG=C.UTF-8");
+      }
+      else if (command.equals("set")) {
+        client.println("BASH=/bin/bash");
+        client.println("BASHOPTS=cmdhist:complete_fullquote:expand_aliases:extquote:force_fignore:histappend:interactive_comments:progcomp");
+        client.println("PWD=" + currentDirectory);
+        client.println("HOME=/home/pi");
+        client.println("LANG=C.UTF-8");
+      }
+      else if (command.equals("alias")) {
+        client.println("alias ls='ls --color=auto'");
+        client.println("alias ll='ls -alF'");
+        client.println("alias l='ls -CF'");
+      }
+      else if (command.equals("history")) {
+        // Petite simulation d’historique
+        client.println("    1  pwd");
+        client.println("    2  ls -l");
+        client.println("    3  whoami");
+        client.println("    4  cat /etc/passwd");
+        client.println("    5  sudo su");
+      }
+      else if (command.equals("iptables")) {
+        client.println("Chain INPUT (policy ACCEPT)");
+        client.println("target     prot opt source               destination         ");
+        client.println("Chain FORWARD (policy ACCEPT)");
+        client.println("target     prot opt source               destination         ");
+        client.println("Chain OUTPUT (policy ACCEPT)");
+        client.println("target     prot opt source               destination         ");
+      }
+  
+      //------------------------------------------------
+      // 9. Commande vide (juste Entrée)
+      //------------------------------------------------
+      else if (command.length() == 0) {
+        // Ne rien faire
+      }
+  
+      //------------------------------------------------
+      // 10. Commande non reconnue
+      //------------------------------------------------
+      else {
+        client.println("bash: " + command + ": command not found");
+      }
+    }
+  
+    // Déconnexion
+    client.stop();
+    Serial.println("Client disconnected.");
+}
+
+
+// -- Helper function to read a line from the client --
+String readLine(WiFiClient &client, bool echo) {
+    String line = "";
+    while (client.connected()) {
+        if (client.available()) {
+            char c = client.read();
+            if (c == '\r') {
+                continue; // Ignore CR
+            }
+            if (c == '\n') {
+                break; // Fin de ligne
+            }
+            // Ajouter le caractère à la ligne sans jamais écho
+            line += c;
+        }
+    }
+
+    // Pas de gestion d'écho ici (pas de client.print)
+    return line;
 }
