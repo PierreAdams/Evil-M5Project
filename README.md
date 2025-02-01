@@ -1,6 +1,6 @@
 <div align="center">
   
-  # Evil-M5Project v1.3.8 - Web Siphoning Cookie
+  # Evil-M5Project v1.3.9 - Honeypot
 
   <img src="https://github.com/7h30th3r0n3/Evil-M5Core2/blob/main/SD-Card-File/img/startup.jpg" width="300" />
 
@@ -36,7 +36,21 @@
 </div>
 
 
+## NEW Feature! from v1.3.9: Telnet High-Interaction Honeypot!!!
+### Introducing an advanced high-interaction Telnet honeypot to analyze attacker behaviors.
 
+### 1. Credential Logging
+- Captures login attempts, including entered usernames and passwords.
+- Logs all user commands for forensic analysis.
+  
+### 2. Realistic Telnet Environment
+- Simulates a real Linux terminal experience for attackers.
+- Supports common commands such as `ls`, `pwd`, `whoami`, `cat`, `ps aux`, and `ifconfig`.
+
+### 3. Session Monitoring & Analysis
+- Tracks attacker activity in real-time.
+- Saves logs locally for further review.
+- Displays interactions on the **M5Cardputer** screen.
 
 ## NEW Feature! from v1.3.8: Web Siphoning Cookie!!!
 ### Introducing the ability to scan, check status, and print on vulnerable printers.
