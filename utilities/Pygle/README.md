@@ -52,10 +52,10 @@ You can modify these thresholds in the script by editing the get_color() functio
 
 Each Wi-Fi marker displays additional information such as:
 
-SSID: The name of the network
-MAC: The MAC address of the access point
-Auth Mode: The type of encryption (e.g., WPA, WPA2)
-RSSI: Signal strength in dBm
-First Seen: Timestamp of when the network was first detected
-Altitude: Altitude in meters
-Accuracy: Accuracy of the GPS coordinates
+- SSID: The name of the network
+- MAC: The MAC address of the access point
+- Auth Mode: The type of encryption (e.g., WPA, WPA2)
+- RSSI: Signal strength in dBm
+- First Seen: Timestamp of when the network was first detected
+- Altitude: Altitude in meters
+- Accuracy: Accuracy of the GPS coordinates
