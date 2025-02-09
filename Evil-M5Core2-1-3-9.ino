@@ -572,6 +572,7 @@ void setup() {
     "   Summoning the void  \n          by kdv88", // Donation on Ko-fi // Thx kdv88 !
     "  Egg sandwich - robt2d2",// Donation on Ko-fi // Thx hook.worm ! Thx robt2d2 !
     "    You know Kiyomi ?   ", // for collab on Wof
+   "Shoutout GainSec for DateTime!", // for datetime RTC implement
     "           42           ",
     "    Don't be a Skidz !",
     "  Hack,Eat,Sleep,Repeat",
