@@ -1,6 +1,7 @@
 import pandas as pd
 import folium
 import chardet
+import html
 
 # Define relevant columns
 colonnes = ['MAC', 'SSID', 'AuthMode', 'FirstSeen', 'Channel', 'RSSI', 'CurrentLatitude', 'CurrentLongitude', 'AltitudeMeters', 'AccuracyMeters', 'Type']
@@ -51,13 +52,13 @@ if not df.empty:
         wifi_type = row['Type']
 
         popup_content = f"""
-        <b>SSID:</b> {ssid}<br>
-        <b>MAC:</b> {mac}<br>
-        <b>Auth Mode:</b> {auth_mode}<br>
+        <b>SSID:</b> {html.escape(ssid)}<br>
+        <b>MAC:</b> {html.escape(mac)}<br>
+        <b>Auth Mode:</b> {html.escape(auth_mode)}<br>
         <b>RSSI:</b> {rssi} dBm<br>
         <b>Altitude:</b> {altitude} m<br>
         <b>Accuracy:</b> {accuracy} m<br>
-        <b>Type:</b> {wifi_type}
+        <b>Type:</b> {html.escape(wifi_type)}
         """
 
         color = get_color(int(rssi))
