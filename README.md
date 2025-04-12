@@ -13,19 +13,42 @@
   <img src="./Github-Img/M5family.jpg" width="300" />
   <img src="./Github-Img/CYD-Stick.jpg" width="200" />
   
-  If you like this project, support me by buying me a coffee on [Ko-fi](https://ko-fi.com/7h30th3r0n3) !
+<hr />
+<h2 style="text-align:center;">☕️ Support This Project</h2>
 
-  [![Support the project on Ko-fi !](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/7h30th3r0n3)
+<p style="text-align:center; font-size:1.1em;">
+  If you find this project useful, consider supporting its development!
+</p>
 
-  Or use this affiliate link to buy M5 product [Support the project on M5 shop](https://shop.m5stack.com/?ref=7h30th3r0n3) !
+<!-- Ko-fi -->
+<div style="text-align:center; margin: 1em 0;">
+  <a href="https://ko-fi.com/7h30th3r0n3" target="_blank" style="text-decoration:none;">
+    <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" />
+  </a>
+</div>
 
-  <div>
-    <a href="https://shop.m5stack.com/?ref=7h30th3r0n3">
-        <img src="https://static.goaffpro.com/4973/images/1561376655877.png" alt="Support my on M5 shop" width="100" style="display:block; margin:auto;" />
-    </a>
-  </div>
+<!-- M5 Affiliate -->
+<div style="text-align:center; margin: 2em 0;">
+  <a href="https://shop.m5stack.com/?ref=7h30th3r0n3" target="_blank">
+    <img src="https://static.goaffpro.com/4973/images/1561376655877.png" alt="Support via M5Stack shop" width="120" />
+  </a>
+  <p><a href="https://shop.m5stack.com/?ref=7h30th3r0n3" target="_blank"><strong>Buy M5Stack product</strong></a> <br />using my affiliate link to help me keep building new tools 🛠️</p>
+</div>
 
-  Or use this one to buy anything you need on AliExpress [Support the project on AliExpress](https://s.click.aliexpress.com/e/_oBMaZol) !
+<!-- AliExpress -->
+<div style="text-align:center; margin: 2em 0;">
+  <a href="https://s.click.aliexpress.com/e/_oBMaZol" target="_blank">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Aliexpress_logo.svg/204px-Aliexpress_logo.svg.png" alt="AliExpress Logo" width="120" style="margin-bottom: 0.5em;" />
+  </a>
+  <p>
+    <a href="https://s.click.aliexpress.com/e/_oBMaZol" target="_blank"><strong>Buy anything on AliExpress</strong></a><br />
+    <span>Just by using this link before searching, you're directly supporting the project 🙌</span>
+  </p>
+</div>
+
+<p><em>Every small click and donation keeps this open-source project alive ✨ just clicking can make a difference 😊</em></p>
+
+<hr />
 
   </br>
 
