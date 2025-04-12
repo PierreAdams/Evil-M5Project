@@ -25,6 +25,8 @@
     </a>
   </div>
 
+  Or use this one to buy anything you need on AliExpress [Support the project on AliExpress](https://s.click.aliexpress.com/e/_oBMaZol) !
+
   </br>
 
   Join the Evil-M5 discord for help and updates 😉:
