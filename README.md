@@ -156,7 +156,7 @@ https://github.com/7h30th3r0n3/Evil-M5Project/wiki
 ---
 
 Features may vary depending on the firmware/device you are using:
-| Feature                       | Evil-Cardputer v1.3.5 | Evil-M5Core2 1.2.2 | Evil-M5Core3 1.1.9 | Evil-AtomS3 v1.1.7 | Evil-Face v1.0 |
+| Feature                       | Evil-Cardputer v1.4.0 | Evil-M5Core2 1.3.9 | Evil-M5Core3 1.1.9 | Evil-AtomS3 v1.1.7 | Evil-Face v1.0 |
 |-------------------------------|-----------------------|--------------------|--------------------|--------------------|----------------|
 | WiFi Network Scanning         | ✅                     | ✅                  | ✅                  | ✅                  | ❌              |
 | Network Cloning               | ✅                     | ✅                  | ✅                  | ✅                  | ❌              |
@@ -175,20 +175,33 @@ Features may vary depending on the firmware/device you are using:
 | EAPOL/Deauth detection        | ✅                     | ✅                  | ✅ (No EAPOL)       | ❌                  | ❌              |
 | Wall Of Flipper               | ✅                     | ✅                  | ✅                  | ❌                  | ❌              |
 | Send tesla code with RFunit   | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
-| Scan Network and port         | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
+| Scan Network and port         | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
 | SSH Shell                     | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
 | Web Crawler                   | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
-| PwnGrid                       | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
-| Skimmer Detector              | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
+| PwnGrid                       | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| Skimmer Detector              | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
 | BadUSB                        | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
 | WebUi BadUSB                  | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
-| Wi-Fi Channel Visualizer      | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
-| Client Sniff                  | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
-| Raw Sniffing                  | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
-| Handshake Master              | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
-| Customing Theming             | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
-| Full Network Scan             | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
-| Reverse TCP Tunnel            | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
+| Wi-Fi Channel Visualizer      | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| Client Sniff                  | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| Raw Sniffing                  | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| Handshake Master              | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| Customing Theming             | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| Full Network Scan             | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| Reverse TCP Tunnel            | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| DHCP Starvation               | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| Rogue DHCP                    | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| Switch DNS                    | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| Network Hijacking             | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| Detect Printer                | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| File Print                    | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| Check printer status          | ✅                     | ✅                  | ❌                  | ❌                  | ❌              |
+| HoneyPot                      | ✅ (with Webhook)      | ✅                  | ❌                  | ❌                  | ❌              |
+| LLM Chat Stream               | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
+| EvilChatMesh                  | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
+| SD on USB                     | ✅                     | ❌                  | ❌                  | ❌                  | ❌              |
+| Settings                      | ✅                     | ✅                  | ✅                  | ✅                  | ❌              |
+
 
 
 ----------------------------------------------------------
