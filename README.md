@@ -215,7 +215,7 @@ You can add multiple ESP32 devices to improve the accuracy and strength of the s
 ## Tested on:
 - **AtomS3**: [Buy here](https://s.click.aliexpress.com/e/_DnDXSKJ)
 - **AtomS3 Lite**: [Buy here](https://s.click.aliexpress.com/e/_Dm0e95D)
-- **ESP32-C3** (with external antenna): [Buy here](https://s.click.aliexpress.com/e/_DD1yibp)
+- **ESP32-C3** (with external antenna): [Buy here](https://s.click.aliexpress.com/e/_DD1yibp) (Be carefull to select sets WITH antenna)
 - **WEMOS D1 Mini**: [Buy here](https://s.click.aliexpress.com/e/_DEWPrnz)
 
 ## Features:
