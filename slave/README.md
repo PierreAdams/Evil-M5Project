@@ -1,8 +1,9 @@
-# ESP32 Wardriving/Sniff Slave
+# ESP32 Wardriving/Sniff Slave/EvilChatMesh
 
 This code is designed to run on any ESP32 and use it as a slave for wardriving and EAPOL sniffing on static channel in combination with wardriving master mode on cardputer. 
 - Wardriving : Each ESP32 collects SSIDs of nearby access points (APs) on a specific channel or can hop between configured channels. 
 - Sniffer : Each ESP32 collects EPAOL and beacon probes around on a specific channel.
+- EvilChatMesh : Each ESP32 act as a relay as a part of the mesh.
 
 You can add multiple ESP32 devices to improve the accuracy and strength of the scan/sniff. 
 Devices with external antennas can enhance the performance for wardriving.
@@ -31,6 +32,8 @@ An AtomS3-adapted version of the `slave_gps_hopping.ino` script. Same but with a
 ### `slave_sniffer_channel_static.ino`
 EAPOL sniffer that remains on a static WiFi channel. It captures EAPOL packets on this channel and send it to cardputer for centralization of captured data.
 
+### `EvilChatMesh-relay.ino`
+Relay for the EvilChatMesh network, it can be used to extend the range of the network.
 
 
 ## Tested on:
