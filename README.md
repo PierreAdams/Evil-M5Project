@@ -205,6 +205,38 @@ Features may vary depending on the firmware/device you are using:
 
 
 ----------------------------------------------------------
+
+## Installation
+### M5burner
+1. Connect your M5Core2 to your computer.
+2. Download M5burner in UIFLOW FIRMWARE BURNING TOOL section : [M5Stack Download Center](https://docs.m5stack.com/en/download)
+3. Place the necessary SD file content at the root of SD card. (This is needed to access all the files of the project).
+4. Type "evil-" in search bar and check for the device you have.
+5. Click download and flash.
+
+
+### Compile Yourself
+1. Connect your M5Core2 to your computer.
+2. Open the Arduino IDE and load the provided code.
+3. Ensure the Board tutorial from M5 and `Adafruit_NeoPixel`, `ArduinoJson`, `ESPping`, `IniFile`, `M5GFX`, `M5Unified`, `TinyGPSPlus`, and `esp8266audio` libraries are installed. Follow these tutorials for guidance on M5 Board tutorial:
+   - [Arduino Board Setup](https://docs.m5stack.com/en/arduino/arduino_board)
+   - [Arduino Library Installation](https://docs.m5stack.com/en/arduino/arduino_library)
+4. Ensure the ESP32 and M5Stack board definitions are installed. **Note:** Errors occur with ESP32 version `3.0.0-alpha3`. Please use ESP32 version `2.1.1` and below.
+5. Place the necessary SD file content at the root of SD card. (This is needed to access the `IMG` startup and `sites` folder).
+6. (Optional) Edit theme.ini on the SD card to customize your device's color theme. (Only supported for cardputer, other devices to be implemented later) 
+7. Ensure to run the script in `utilities/deauth_prerequisites` to bypass the ESP32 firmware.
+8. Add libraries for BadUSB functionality. See `utilities/Bad_Usb_Lib/README.md`
+9. Ensure that the baud rate is set to `115200`.
+10. Ensure that `PSRAM` is disabled in the tools menu.
+11. Upload the script to your M5Core2 device.
+12. Restart the device if needed.
+
+Warning : for Cardputer you need to change the Flash size to 8MB and the Partition Scheme to 8M with spiffs (3MB APP/1.5MB SPIFFS) or space error may occur.
+It's your first time with arduino IDE or something not working correctly? You should check out video section or ask help on the discord ! 
+
+----------------------------------------------------------
+
+# ESP32 Rig Slave
 ### You can use any ESP32 as slave to collect SSID for wigle and sniff EAPOL
 By using 14 ESP32 devices, you can monitor all 14 Wi-Fi channels on the 2.4GHz band simultaneously without channel hopping. The **Cardputer** uses GPS to link each received SSID to a CSV file compatible with Wigle.
 
