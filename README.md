@@ -79,12 +79,12 @@ https://github.com/7h30th3r0n3/Evil-M5Project/wiki
     <th>Links to buy</th>
   </tr>
   <tr>
-    <td>M5Stack Core2</td>
-    <td><a href="https://shop.m5stack.com/products/m5stack-core2-esp32-iot-development-kit-v1-1?ref=7h30th3r0n3">M5Stack</a> / <a href="https://s.click.aliexpress.com/e/_DBIMh8l">AliExpress</a></td>
-  </tr>
-  <tr>
-    <td>M5Cardputer</td>
+    <td> Better one : M5Cardputer</td>
     <td><a href="https://shop.m5stack.com/products/m5stack-cardputer-kit-w-m5stamps3?ref=7h30th3r0n3">M5Stack</a> / <a href="https://s.click.aliexpress.com/e/_DBzWP6B">AliExpress</a></td>
+     </tr>
+  <tr>
+     <td>M5Stack Core2</td>
+    <td><a href="https://shop.m5stack.com/products/m5stack-core2-esp32-iot-development-kit-v1-1?ref=7h30th3r0n3">M5Stack</a> / <a href="https://s.click.aliexpress.com/e/_DBIMh8l">AliExpress</a></td>
   </tr>
   <tr>
     <td>M5Stack Fire</td>
